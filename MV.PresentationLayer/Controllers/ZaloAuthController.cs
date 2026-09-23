@@ -29,7 +29,25 @@ namespace MV.PresentationLayer.Controllers
                 return BadRequest(new APIResponse<object>(400, "Dữ liệu không hợp lệ.", null));
 
             var result = await _zaloAuthService.LoginWithZaloCodeAsync(request);
+            return ToActionResult(result);
+        }
 
+        /// <summary>
+        /// Đăng nhập Zalo từ app mobile: Zalo SDK native trả access token trên thiết bị,
+        /// app gửi { accessToken }. Response giống hệt POST /api/auth/zalo.
+        /// </summary>
+        [HttpPost("zalo/app")]
+        public async Task<IActionResult> LoginWithZaloApp([FromBody] ZaloAppLoginRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(new APIResponse<object>(400, "Dữ liệu không hợp lệ.", null));
+
+            var result = await _zaloAuthService.LoginWithZaloAccessTokenAsync(request);
+            return ToActionResult(result);
+        }
+
+        private IActionResult ToActionResult(MV.DomainLayer.DTO.ResponseModel.TokenResponse result)
+        {
             if (result.RequiresRoleSelection || result.RequiresPhoneInput)
             {
                 return Ok(new

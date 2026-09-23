@@ -380,6 +380,98 @@ public class ZaloOAService : IZaloOAService
         }
     }
 
+    public async Task<ZaloSendResult> SendZbsTemplateByPhoneAsync(
+        string phone, string templateId, Dictionary<string, string> templateData, CancellationToken ct = default)
+    {
+        string zbsPhone;
+        try
+        {
+            zbsPhone = NormalizeVietnamPhoneForZns(phone);
+        }
+        catch (ArgumentException)
+        {
+            // SĐT sai định dạng thì gọi Zalo cũng nhận -108 — trả luôn mã đó để bên gọi xử lý chung một đường.
+            return new ZaloSendResult { Success = false, ErrorCode = -108, Error = "Số điện thoại không đúng định dạng Việt Nam." };
+        }
+
+        if (_isMockMode)
+        {
+            _logger.LogInformation("[MOCK] ZBS template {TemplateId} → phone={Phone}, data={Data}",
+                templateId, zbsPhone, JsonSerializer.Serialize(templateData));
+            return new ZaloSendResult { Success = true, MessageId = $"mock_{Guid.NewGuid():N}" };
+        }
+
+        try
+        {
+            var token = await GetOAAccessTokenAsync();
+            var client = _httpClientFactory.CreateClient(ServiceKeys.HttpClients.ZaloZNS);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "message/template")
+            {
+                Content = JsonContent.Create(new Dictionary<string, object>
+                {
+                    ["phone"] = zbsPhone,
+                    ["template_id"] = templateId,
+                    ["template_data"] = templateData,
+                    ["tracking_id"] = Guid.NewGuid().ToString("N")
+                })
+            };
+            req.Headers.Add(OAuthFieldNames.AccessToken, token);
+
+            using var res = await client.SendAsync(req, ct);
+            var responseBody = await res.Content.ReadAsStringAsync(ct);
+            _logger.LogInformation("ZBS response: phone={Phone}, template={TemplateId}, status={Status}, body={Body}",
+                zbsPhone, templateId, (int)res.StatusCode, responseBody);
+
+            JsonElement body = default;
+            var hasBody = false;
+            try
+            {
+                body = JsonSerializer.Deserialize<JsonElement>(responseBody);
+                hasBody = body.ValueKind == JsonValueKind.Object;
+            }
+            catch (JsonException) { /* 5xx/gateway thường trả HTML — xử lý theo status code bên dưới */ }
+
+            int? code = hasBody && body.TryGetProperty("error", out var errEl) && errEl.ValueKind == JsonValueKind.Number
+                ? errEl.GetInt32()
+                : null;
+            var message = hasBody && body.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String
+                ? m.GetString()
+                : null;
+
+            if (res.IsSuccessStatusCode && code == 0)
+            {
+                // msg_id có lúc là chuỗi, có lúc là số — đọc cả hai cho chắc.
+                string? msgId = null;
+                if (body.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object
+                    && d.TryGetProperty("msg_id", out var mid))
+                {
+                    msgId = mid.ValueKind == JsonValueKind.String ? mid.GetString() : mid.GetRawText();
+                }
+                return new ZaloSendResult { Success = true, MessageId = msgId, ErrorCode = 0 };
+            }
+
+            _logger.LogWarning("ZBS gửi thất bại tới {Phone}: code={Code}, message={Message}", zbsPhone, code, message);
+            return new ZaloSendResult
+            {
+                Success = false,
+                ErrorCode = code,
+                Error = message ?? $"HTTP {(int)res.StatusCode}",
+                // Không có mã lỗi nghiệp vụ mà HTTP 5xx → lỗi phía Zalo, thử lại sau.
+                IsTransient = code is null && (int)res.StatusCode >= 500
+            };
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Mạng, timeout HttpClient, không refresh được token... → tạm thời.
+            _logger.LogError(ex, "ZBS exception cho phone {Phone} template {TemplateId}", zbsPhone, templateId);
+            return new ZaloSendResult { Success = false, Error = ex.Message, IsTransient = true };
+        }
+    }
+
     private static string NormalizeVietnamPhoneForZns(string phone)
     {
         var digits = new string(phone.Where(char.IsDigit).ToArray());
@@ -400,6 +492,55 @@ public class ZaloOAService : IZaloOAService
         }
 
         throw new ArgumentException("Số điện thoại không đúng định dạng Việt Nam.", nameof(phone));
+    }
+
+    // ─── User detail ─────────────────────────────────────────────────────────
+
+    public async Task<ZaloOAUserDetail?> GetOAUserDetailAsync(string oaUserId, CancellationToken ct = default)
+    {
+        if (_isMockMode || string.IsNullOrWhiteSpace(oaUserId)) return null;
+
+        try
+        {
+            var token = await GetOAAccessTokenAsync();
+            var client = _httpClientFactory.CreateClient(ServiceKeys.HttpClients.ZaloOA);
+            var data = Uri.EscapeDataString(JsonSerializer.Serialize(new { user_id = oaUserId }));
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"v3.0/oa/user/detail?data={data}");
+            req.Headers.Add(OAuthFieldNames.AccessToken, token);
+
+            var res = await client.SendAsync(req, ct);
+            var body = await res.Content.ReadAsStringAsync(ct);
+            if (!res.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("OA user/detail HTTP {Status}", res.StatusCode);
+                return null;
+            }
+
+            var json = JsonSerializer.Deserialize<JsonElement>(body);
+            if (json.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.Number && err.GetInt32() != 0)
+            {
+                _logger.LogWarning("OA user/detail error {Code}: {Message}", err.GetInt32(),
+                    json.TryGetProperty("message", out var m) ? m.GetString() : null);
+                return null;
+            }
+            if (!json.TryGetProperty("data", out var d) || d.ValueKind != JsonValueKind.Object) return null;
+
+            static string? Str(JsonElement e, string name) =>
+                e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+            return new ZaloOAUserDetail
+            {
+                UserId = Str(d, "user_id") ?? oaUserId,
+                UserIdByApp = Str(d, "user_id_by_app"),
+                DisplayName = Str(d, "display_name"),
+                IsFollower = d.TryGetProperty("user_is_follower", out var f) && f.ValueKind == JsonValueKind.True
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không lấy được OA user/detail cho {Uid}", oaUserId);
+            return null;
+        }
     }
 
     // ─── User Link Status ────────────────────────────────────────────────────
@@ -428,4 +569,9 @@ public class ZaloOAConfig
     public string? ZnsTemplateBookingConfirmed { get; set; }
     public string? ZnsTemplateLessonReport { get; set; }
     public string? ZnsTemplatePayoutProcessed { get; set; }
+
+    // ZBS Template Message (thay ZNS từ 2026), gửi theo SĐT
+    /// <summary>Mẫu báo cáo buổi học gửi phụ huynh học sinh ngoài nền tảng (tag 2 - CSKH).
+    /// Để trống = job gửi báo cáo giữ nguyên các buổi ở pending. Nội dung mẫu: docs/zbs-template-lesson-report.md.</summary>
+    public string? ZbsTemplateRecorderReport { get; set; }
 }
