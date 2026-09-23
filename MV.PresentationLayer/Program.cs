@@ -56,6 +56,8 @@ builder.Services.Configure<PaymentSettings>(builder.Configuration.GetSection(Pay
 builder.Services.Configure<GoogleSettings>(builder.Configuration.GetSection(GoogleSettings.SectionName));
 builder.Services.Configure<AgoraSettings>(builder.Configuration.GetSection(AgoraSettings.SectionName));
 builder.Services.Configure<AgoraRecordingSettings>(builder.Configuration.GetSection(AgoraRecordingSettings.SectionName));
+builder.Services.Configure<AppRecordingStorageSettings>(builder.Configuration.GetSection(AppRecordingStorageSettings.SectionName));
+builder.Services.Configure<ZaloMiniAppSettings>(builder.Configuration.GetSection(ZaloMiniAppSettings.SectionName));
 builder.Services.Configure<AgoraNotificationSettings>(builder.Configuration.GetSection(AgoraNotificationSettings.SectionName));
 builder.Services.Configure<SessionEvidenceSettings>(builder.Configuration.GetSection(SessionEvidenceSettings.SectionName));
 builder.Services.Configure<AbandonedSessionSettings>(builder.Configuration.GetSection(AbandonedSessionSettings.SectionName));
@@ -405,6 +407,13 @@ builder.Services.AddHttpClient<IWhiteboardService, WhiteboardService>();
 builder.Services.AddScoped<IGoogleDriveService, GoogleDriveService>();
 builder.Services.AddSingleton<IRecordingAccessTokenService, RecordingAccessTokenService>();
 builder.Services.AddScoped<IRecordingRelayService, RecordingRelayService>();
+// Ghi âm buổi dạy tại nhà từ app gia sư. Storage là singleton vì nó không giữ
+// trạng thái nào ngoài cấu hình bucket; service theo request như mọi service khác.
+builder.Services.AddSingleton<IAppRecordingStorage, AppRecordingStorage>();
+builder.Services.AddScoped<IAppRecordingService, AppRecordingService>();
+builder.Services.AddScoped<IRecorderService, RecorderService>();
+builder.Services.AddScoped<IRecorderParentLinkService, RecorderParentLinkService>();
+builder.Services.AddScoped<IRecorderAiService, RecorderAiService>();
 builder.Services.AddHostedService<MV.PresentationLayer.BackgroundServices.RecordingRelayHostedService>();
 builder.Services.AddScoped<ITutorFinanceService, TutorFinanceService>();
 // Tài khoản ngân hàng dùng chung Tutor/Parent/Student — mọi lần lưu/xoá đều cần OTP riêng
@@ -487,6 +496,21 @@ builder.Services.AddHangfire(config => config
 // interactive-worker=2 khôi phục lại khả năng đó, cộng thêm việc không bao giờ bị bulk chiếm mất.
 // Tổng WorkerCount = 3 (tăng 1 so với bản gốc) — cần xác nhận VPS còn dư RAM/CPU trước khi deploy
 // (xem `docker stats` / `free -h`), vì có thể chạy đồng thời 2 lệnh gọi Gemini + 1 job nền.
+// Dev local trỏ vào DB dùng chung: chỉ chạy 1 worker nghe queue riêng, không đụng queue của
+// VPS/Railway (xem LocalQueueFilter). Không set Hangfire:LocalQueue → giữ nguyên cấu hình prod.
+var hangfireLocalQueue = builder.Configuration["Hangfire:LocalQueue"];
+if (!string.IsNullOrWhiteSpace(hangfireLocalQueue))
+{
+    GlobalJobFilters.Filters.Add(new MV.PresentationLayer.Filters.LocalQueueFilter(hangfireLocalQueue));
+    builder.Services.AddHangfireServer(options =>
+    {
+        options.ServerName = $"local-worker-{Environment.MachineName}";
+        options.WorkerCount = 1;
+        options.Queues = new[] { hangfireLocalQueue };
+    });
+}
+else
+{
 builder.Services.AddHangfireServer(options =>
 {
     options.ServerName = "interactive-worker";
@@ -499,6 +523,7 @@ builder.Services.AddHangfireServer(options =>
     options.WorkerCount = 1;
     options.Queues = new[] { "default", "bulk" };
 });
+}
 
 builder.Services.AddHttpClient(ServiceKeys.HttpClients.VietQR, client =>
 {
@@ -542,6 +567,9 @@ builder.Services.AddScoped<ITutorSuggestionService, TutorSuggestionService>();
 // Background job
 //builder.Services.AddHostedService<EmailConsumerService>();
 builder.Services.AddHostedService<PaymentTimeoutJob>();
+builder.Services.AddHostedService<RecorderAudioRetentionJob>();
+builder.Services.AddHostedService<RecorderReportDeliveryJob>();
+builder.Services.AddHostedService<RecorderTranscriptBatchJob>();
 builder.Services.AddHostedService<PaymentRequestReconciliationJob>();
 builder.Services.AddHostedService<TutorResponseTimeoutJob>();
 builder.Services.AddHostedService<AutoConfirmClassSessionJob>();

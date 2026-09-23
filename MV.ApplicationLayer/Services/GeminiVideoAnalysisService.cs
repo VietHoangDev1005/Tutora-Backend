@@ -22,6 +22,7 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
     private const long MaxFileSizeBytes = 2_000_000_000;
     private const int FileActivePollIntervalSeconds = 5;
     private const int FileActiveMaxWaitMinutes = 10;
+    private const string GoogleApiKeyHeader = "x-goog-api-key";
 
     private readonly HttpClient _httpClient;
     private readonly GoogleGeminiSettings _settings;
@@ -40,6 +41,12 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
         _httpClient = httpClient;
         _settings = settings.Value;
         _logger = logger;
+
+        // Gửi API key qua header thay vì query string (?key=...) để key không lọt vào URL —
+        // URL request bị HttpClient ghi ra log, proxy/access log, trace...
+        if (!string.IsNullOrWhiteSpace(_settings.ApiKey)
+            && !_httpClient.DefaultRequestHeaders.Contains(GoogleApiKeyHeader))
+            _httpClient.DefaultRequestHeaders.TryAddWithoutValidation(GoogleApiKeyHeader, _settings.ApiKey);
     }
 
     public async Task<GeminiUploadedFile> UploadVideoAsync(
@@ -50,7 +57,7 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
             throw new GeminiVideoTooLargeException();
 
         // Bước 1: khởi tạo resumable upload session, lấy URL upload thật từ header X-Goog-Upload-URL.
-        using var startRequest = new HttpRequestMessage(HttpMethod.Post, $"/upload/v1beta/files?key={_settings.ApiKey}");
+        using var startRequest = new HttpRequestMessage(HttpMethod.Post, $"/upload/v1beta/files");
         startRequest.Headers.TryAddWithoutValidation("X-Goog-Upload-Protocol", "resumable");
         startRequest.Headers.TryAddWithoutValidation("X-Goog-Upload-Command", "start");
         startRequest.Headers.TryAddWithoutValidation("X-Goog-Upload-Header-Content-Length", contentLength.ToString());
@@ -102,7 +109,7 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
 
         while (true)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1beta/{fileName}?key={_settings.ApiKey}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1beta/{fileName}");
             using var response = await _httpClient.SendAsync(request, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -163,6 +170,42 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
         return parsed.Summary.Trim();
     }
 
+    /// <summary>Prompt chép lời buổi học ghi âm từ app — dùng chung cho gọi thường và Batch API.
+    /// Có yêu cầu ẩn danh vì transcript được lưu làm nguyên liệu thô lâu dài.</summary>
+    private const string LessonTranscriptPrompt = """
+            Bạn là trợ lý chép lời bản ghi âm một buổi học 1-kèm-1 giữa gia sư và học sinh (ghi tại nhà,
+            bằng điện thoại). Hãy nghe kỹ và chép lại bằng tiếng Việt toàn bộ hội thoại, đúng những gì
+            từng người thực sự nói, đúng trình tự thời gian. Không tóm lược, không bỏ sót.
+
+            ĐỊNH DẠNG — bắt buộc tuyệt đối:
+            - MỖI lượt nói là MỘT dòng, dạng: [mm:ss] Người nói: nội dung
+              ví dụ: [00:05] Gia sư: Hôm nay mình ôn phương trình bậc hai nhé.
+            - [mm:ss] là thời điểm lượt nói BẮT ĐẦU trong bản ghi, tính từ 00:00. Quá 60 phút thì
+              ghi tiếp số phút, ví dụ [75:12].
+            - Người nói chỉ được là một trong: "Gia sư", "Học sinh", "Không rõ".
+              Gia sư là người giảng, đặt câu hỏi, giao bài; học sinh là người trả lời, hỏi lại.
+            - Không dùng markdown, không in đậm, không dòng trống, không tiêu đề.
+            - Đoạn im lặng dài hoặc tiếng ồn thì bỏ qua, không cần ghi.
+
+            - ẨN DANH: không chép họ tên riêng của bất kỳ ai (học sinh, gia sư, người thân, bạn bè),
+              số điện thoại, địa chỉ nhà, tên trường. Thay lần lượt bằng [TÊN], [SĐT], [ĐỊA CHỈ], [TRƯỜNG].
+              Tên nhân vật trong đề bài/sách (vd "bạn Lan mua 3 quả táo") thì giữ nguyên.
+
+            Trả lời trực tiếp bằng văn bản theo đúng định dạng trên, KHÔNG bọc trong JSON.
+            """;
+
+    public async Task<string> TranscribeLessonAudioAsync(string fileUri, string mimeType, CancellationToken ct = default)
+    {
+        const string prompt = LessonTranscriptPrompt;
+
+        // Văn bản thường, không JSON: bị cắt vì trần token thì phần đã chép vẫn dùng được.
+        var requestBody = BuildGenerateContentRequest(fileUri, mimeType, prompt, jsonSchema: null, _settings.TranscriptMaxOutputTokens);
+        var text = await SendGenerateContentAsync(requestBody, _settings.TranscriptModel, ct, "LessonTranscript", fileUri);
+        if (string.IsNullOrWhiteSpace(text))
+            throw new GeminiResponseParseException("Gemini trả về lời thoại rỗng.");
+        return text.Trim();
+    }
+
     public async Task<string> TranscribeVideoAsync(string fileUri, string mimeType, CancellationToken ct = default)
     {
         const string prompt = """
@@ -220,7 +263,8 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
     {
         const string prompt = """
             Bạn là trợ lý giúp gia sư viết báo cáo sau buổi học 1-kèm-1, dựa trên bản ghi âm buổi học.
-            Hãy nghe kỹ và trả về đúng 3 nội dung sau, viết bằng tiếng Việt, ở góc nhìn của gia sư viết cho phụ huynh/học sinh đọc:
+            Hãy nghe kỹ và trả về các nội dung sau, viết bằng tiếng Việt.
+            PHẦN 1 — BÁO CÁO GỬI PHỤ HUYNH, ở góc nhìn của gia sư viết cho phụ huynh/học sinh đọc:
             - lessonContent: Nội dung đã dạy trong buổi học.
             - homework: Bài tập về nhà đã giao cho học sinh — CHỈ ghi đúng những gì gia sư THẬT SỰ nói trong
               audio, tuyệt đối không tự suy đoán hay bịa thêm bài tập không được nhắc tới. Nếu audio KHÔNG đề
@@ -233,6 +277,15 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
               nhận xét chung chung không có căn cứ từ audio. Nếu audio KHÔNG có gì để nhận xét thêm, PHẢI ghi
               rõ "Không đề cập gì thêm." — không bịa ra nhận xét nghe có vẻ hợp lý nhưng thực chất không dựa
               trên nội dung buổi học. Tuyệt đối không để trống hay chỉ viết vài chữ ngắn.
+
+            PHẦN 2 — sessionMinutes: BIÊN BẢN BUỔI HỌC dành riêng cho GIA SƯ tự xem lại (không gửi phụ
+            huynh), viết ngắn gọn, đi thẳng vào ý, dạng ghi chú nhanh. Buổi học dài cũng chỉ tóm tắt ngắn,
+            KHÔNG kể lại diễn biến từng phút, không vượt quá số lượng dưới đây:
+            - summary: 2–4 câu tóm tắt buổi học (học gì, học sinh tiếp thu thế nào).
+            - keyPoints: 3–6 ý chính đã dạy/thảo luận, mỗi ý một câu ngắn (không quá ~20 chữ).
+            - followUps: 0–5 việc gia sư cần làm/nhớ cho buổi sau (ví dụ: kiểm tra bài tập đã giao, ôn lại
+              phần học sinh còn yếu, chuẩn bị tài liệu đã hứa). Mỗi việc một câu ngắn. CHỈ ghi những việc có
+              căn cứ từ audio — nếu không có gì thì trả về mảng rỗng, không bịa ra.
             """;
 
         var schema = new GeminiSchema
@@ -242,9 +295,20 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
             {
                 ["lessonContent"] = new() { Type = "STRING" },
                 ["homework"] = new() { Type = "STRING" },
-                ["tutorNotes"] = new() { Type = "STRING" }
+                ["tutorNotes"] = new() { Type = "STRING" },
+                ["sessionMinutes"] = new()
+                {
+                    Type = "OBJECT",
+                    Properties = new Dictionary<string, GeminiSchema>
+                    {
+                        ["summary"] = new() { Type = "STRING" },
+                        ["keyPoints"] = new() { Type = "ARRAY", Items = new() { Type = "STRING" } },
+                        ["followUps"] = new() { Type = "ARRAY", Items = new() { Type = "STRING" } }
+                    },
+                    Required = ["summary", "keyPoints", "followUps"]
+                }
             },
-            Required = ["lessonContent", "homework", "tutorNotes"]
+            Required = ["lessonContent", "homework", "tutorNotes", "sessionMinutes"]
         };
 
         var requestBody = BuildGenerateContentRequest(fileUri, mimeType, prompt, schema);
@@ -263,7 +327,34 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
         if (parsed.Homework == null || parsed.Homework.Trim().Length < minHomeworkLength)
             parsed.Homework = "Không đề cập giao bài tập.";
 
+        parsed.SessionMinutes = NormalizeSessionMinutes(parsed.SessionMinutes);
+
         return parsed;
+    }
+
+    /// <summary>
+    /// Biên bản chỉ là phần phụ cho gia sư — model trả thiếu/sai thì bỏ qua chứ không làm hỏng cả báo cáo
+    /// gửi phụ huynh. JSON "keyPoints": null sẽ ghi đè giá trị mặc định của list nên phải chuẩn hoá lại;
+    /// đồng thời cắt bớt nếu model trả nhiều hơn giới hạn trong prompt (buổi dài dễ bị kể lể).
+    /// </summary>
+    private static TutorSessionMinutes? NormalizeSessionMinutes(TutorSessionMinutes? minutes)
+    {
+        if (minutes is null) return null;
+
+        static List<string> Clean(List<string>? items, int max) =>
+            (items ?? new List<string>())
+                .Where(i => !string.IsNullOrWhiteSpace(i))
+                .Select(i => i.Trim())
+                .Take(max)
+                .ToList();
+
+        minutes.Summary = string.IsNullOrWhiteSpace(minutes.Summary) ? null : minutes.Summary.Trim();
+        minutes.KeyPoints = Clean(minutes.KeyPoints, 6);
+        minutes.FollowUps = Clean(minutes.FollowUps, 5);
+
+        if (minutes.Summary is null && minutes.KeyPoints.Count == 0 && minutes.FollowUps.Count == 0)
+            return null;
+        return minutes;
     }
 
     public async Task<string> AskFollowUpAsync(
@@ -490,7 +581,7 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
         for (var attempt = 1; ; attempt++)
         {
             using var request = new HttpRequestMessage(
-                HttpMethod.Post, $"/v1beta/models/{model}:generateContent?key={_settings.ApiKey}")
+                HttpMethod.Post, $"/v1beta/models/{model}:generateContent")
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
@@ -539,6 +630,166 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
         }
     }
 
+    // ─── Batch API (chép lời nền, giá 50%) ─────────────────────────────────────
+
+    public async Task<string> CreateLessonTranscriptBatchAsync(
+        IReadOnlyList<GeminiBatchAudioItem> items, string displayName, CancellationToken ct = default)
+    {
+        EnsureConfigured();
+        if (items.Count == 0) throw new ArgumentException("Batch rỗng.", nameof(items));
+
+        var requests = items.Select(i => new
+        {
+            request = BuildGenerateContentRequest(i.FileUri, i.MimeType, LessonTranscriptPrompt, jsonSchema: null,
+                _settings.TranscriptMaxOutputTokens),
+            metadata = new { key = i.Key }
+        }).ToList();
+
+        var body = new
+        {
+            batch = new
+            {
+                displayName,
+                inputConfig = new { requests = new { requests } }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(body, CamelCaseOptions);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, $"/v1beta/models/{_settings.TranscriptModel}:batchGenerateContent")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        using var response = await _httpClient.SendAsync(request, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Gemini batchGenerateContent lỗi: {StatusCode} - {Body}", response.StatusCode, responseBody);
+            throw new GeminiApiException((int)response.StatusCode, "Gemini không tạo được batch chép lời.");
+        }
+
+        using var doc = JsonDocument.Parse(responseBody);
+        var name = doc.RootElement.TryGetProperty("name", out var n) ? n.GetString() : null;
+        if (string.IsNullOrWhiteSpace(name))
+            throw new GeminiResponseParseException("Gemini không trả về tên batch.");
+
+        _logger.LogInformation("Gemini batch {Batch} tạo với {Count} buổi ({Model}).", name, items.Count, _settings.TranscriptModel);
+        return name!;
+    }
+
+    public async Task<GeminiBatchStatus> GetBatchAsync(string batchName, CancellationToken ct = default)
+    {
+        EnsureConfigured();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1beta/{batchName}");
+        using var response = await _httpClient.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Gemini get batch {Batch} lỗi: {StatusCode} - {Body}", batchName, response.StatusCode, body);
+            throw new GeminiApiException((int)response.StatusCode, "Không lấy được trạng thái batch.");
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        // REST trả Operation: metadata.state (BATCH_STATE_* hoặc JOB_STATE_*), done, và kết quả nằm ở
+        // response.inlinedResponses hoặc metadata.output.inlinedResponses (có nơi bọc thêm một lớp
+        // inlinedResponses.inlinedResponses) — đọc mềm dẻo để không vỡ khi Google đổi vỏ.
+        string? rawState = null;
+        if (root.TryGetProperty("metadata", out var meta) && meta.TryGetProperty("state", out var st))
+            rawState = st.GetString();
+        var done = root.TryGetProperty("done", out var d) && d.ValueKind == JsonValueKind.True;
+
+        var state = rawState switch
+        {
+            { } x when x.Contains("SUCCEEDED", StringComparison.OrdinalIgnoreCase) => GeminiBatchState.Succeeded,
+            { } x when x.Contains("FAILED", StringComparison.OrdinalIgnoreCase) => GeminiBatchState.Failed,
+            { } x when x.Contains("CANCELLED", StringComparison.OrdinalIgnoreCase) => GeminiBatchState.Cancelled,
+            { } x when x.Contains("EXPIRED", StringComparison.OrdinalIgnoreCase) => GeminiBatchState.Expired,
+            _ when done && root.TryGetProperty("error", out _) => GeminiBatchState.Failed,
+            _ when done => GeminiBatchState.Succeeded,
+            _ => GeminiBatchState.Running
+        };
+
+        var items = new List<GeminiBatchItemResult>();
+        if (state == GeminiBatchState.Succeeded)
+        {
+            var arr = FindInlinedResponses(root);
+            if (arr is { } list)
+            {
+                foreach (var item in list.EnumerateArray())
+                {
+                    string? key = null;
+                    if (item.TryGetProperty("metadata", out var m) && m.ValueKind == JsonValueKind.Object
+                        && m.TryGetProperty("key", out var k))
+                        key = k.GetString();
+
+                    if (item.TryGetProperty("error", out var err))
+                    {
+                        items.Add(new GeminiBatchItemResult(key, null,
+                            err.TryGetProperty("message", out var em) ? em.GetString() : err.ToString()));
+                        continue;
+                    }
+
+                    string? text = null;
+                    string? finish = null;
+                    if (item.TryGetProperty("response", out var resp)
+                        && resp.TryGetProperty("candidates", out var cands)
+                        && cands.ValueKind == JsonValueKind.Array && cands.GetArrayLength() > 0)
+                    {
+                        var c0 = cands[0];
+                        if (c0.TryGetProperty("finishReason", out var fr)) finish = fr.GetString();
+                        if (c0.TryGetProperty("content", out var content)
+                            && content.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Array)
+                        {
+                            text = string.Concat(parts.EnumerateArray()
+                                .Where(p => p.TryGetProperty("text", out _))
+                                .Select(p => p.GetProperty("text").GetString()));
+                        }
+                    }
+
+                    items.Add(string.IsNullOrWhiteSpace(text)
+                        ? new GeminiBatchItemResult(key, null, finish != null ? $"Không có nội dung (finishReason={finish})." : "Không có nội dung.")
+                        : new GeminiBatchItemResult(key, text, null));
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Gemini batch {Batch} xong nhưng không tìm thấy inlinedResponses.", batchName);
+            }
+        }
+
+        return new GeminiBatchStatus(state, items, rawState);
+    }
+
+    public async Task DeleteBatchAsync(string batchName, CancellationToken ct = default)
+    {
+        EnsureConfigured();
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"/v1beta/{batchName}");
+        using var response = await _httpClient.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+            _logger.LogWarning("Không xoá được Gemini batch {Batch}: {StatusCode}", batchName, response.StatusCode);
+    }
+
+    /// <summary>Tìm mảng inlinedResponses ở response.* hoặc metadata.output.* (có thể bọc 2 lớp).</summary>
+    private static JsonElement? FindInlinedResponses(JsonElement root)
+    {
+        static JsonElement? Unwrap(JsonElement e)
+        {
+            if (!e.TryGetProperty("inlinedResponses", out var ir)) return null;
+            if (ir.ValueKind == JsonValueKind.Array) return ir;
+            if (ir.ValueKind == JsonValueKind.Object && ir.TryGetProperty("inlinedResponses", out var inner)
+                && inner.ValueKind == JsonValueKind.Array) return inner;
+            return null;
+        }
+
+        if (root.TryGetProperty("response", out var resp) && Unwrap(resp) is { } a) return a;
+        if (root.TryGetProperty("metadata", out var meta) && meta.TryGetProperty("output", out var output)
+            && Unwrap(output) is { } b) return b;
+        if (root.TryGetProperty("dest", out var dest) && Unwrap(dest) is { } c) return c;
+        return null;
+    }
+
     #region Response Models
 
     private class SummaryJson
@@ -563,6 +814,8 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
         public string Type { get; set; } = "STRING";
         public Dictionary<string, GeminiSchema>? Properties { get; set; }
         public string[]? Required { get; set; }
+        /// <summary>Kiểu phần tử khi Type = "ARRAY".</summary>
+        public GeminiSchema? Items { get; set; }
     }
 
     private class GeminiGenerateContentResponse

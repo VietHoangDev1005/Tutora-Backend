@@ -25,6 +25,21 @@ namespace MV.ApplicationLayer.ServiceInterfaces
         /// dùng model riêng (<see cref="MV.DomainLayer.Configuration.GoogleGeminiSettings.TranscriptModel"/>).</summary>
         Task<string> TranscribeVideoAsync(string fileUri, string mimeType, CancellationToken ct = default);
 
+        /// <summary>Chép lời bản ghi âm từ app gia sư, MỖI lượt nói một dòng có mốc thời gian:
+        /// "[mm:ss] Gia sư: …" — để app hiển thị và chạm vào mốc thì tua tới đó.</summary>
+        Task<string> TranscribeLessonAudioAsync(string fileUri, string mimeType, CancellationToken ct = default);
+
+        /// <summary>Gửi một batch chép lời (Gemini Batch API, giá 50%) cho nhiều buổi. Trả về tên
+        /// batch (batches/...). Cùng prompt với TranscribeLessonAudioAsync.</summary>
+        Task<string> CreateLessonTranscriptBatchAsync(
+            IReadOnlyList<GeminiBatchAudioItem> items, string displayName, CancellationToken ct = default);
+
+        /// <summary>Trạng thái + kết quả (khi đã xong) của một batch.</summary>
+        Task<GeminiBatchStatus> GetBatchAsync(string batchName, CancellationToken ct = default);
+
+        /// <summary>Xoá batch trên Google sau khi đã lấy kết quả — mặc định Google giữ kết quả 6 tuần.</summary>
+        Task DeleteBatchAsync(string batchName, CancellationToken ct = default);
+
         /// <summary>Sinh nội dung báo cáo có cấu trúc (structured JSON output) cho gia sư.</summary>
         Task<TutorReportAiFillResult> GenerateTutorReportFieldsAsync(string fileUri, string mimeType, CancellationToken ct = default);
 

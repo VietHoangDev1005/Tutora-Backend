@@ -20,9 +20,24 @@ public interface IZaloOAService
     Task<ZaloSendResult> SendNotificationAsync(string userId, string templateId, Dictionary<string, string> data);
 
     /// <summary>
+    /// Gửi ZBS Template Message (thay ZNS) thẳng tới SĐT — không cần UID/Mini App.
+    /// Trả về <see cref="ZaloSendResult.ErrorCode"/> để bên gọi phân loại lỗi (SĐT không dùng Zalo,
+    /// ngoài giờ gửi, từ chối nhận tin...) và <see cref="ZaloSendResult.IsTransient"/> cho lỗi mạng/5xx.
+    /// Không ném exception (trừ khi <paramref name="ct"/> bị huỷ).
+    /// </summary>
+    Task<ZaloSendResult> SendZbsTemplateByPhoneAsync(
+        string phone, string templateId, Dictionary<string, string> templateData, CancellationToken ct = default);
+
+    /// <summary>
     /// Check whether a user has linked their Zalo account.
     /// </summary>
     Task<bool> IsZaloLinkedAsync(string userId);
+
+    /// <summary>
+    /// Lấy thông tin người dùng theo UID của OA (user_id_by_app, trạng thái quan tâm).
+    /// Trả null khi không gọi được (mock mode, UID sai, thiếu quyền).
+    /// </summary>
+    Task<ZaloOAUserDetail?> GetOAUserDetailAsync(string oaUserId, CancellationToken ct = default);
 
     // ── Token management ──────────────────────────────────────────────────
 

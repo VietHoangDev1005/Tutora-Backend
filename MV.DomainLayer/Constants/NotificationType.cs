@@ -83,6 +83,12 @@ public static class NotificationType
     public const string LessonVideoSummaryReady = "lesson_video_summary_ready";
     /// <summary>Gemini đã điền xong nội dung báo cáo gợi ý cho gia sư. Referenceid = classSessionId.</summary>
     public const string LessonReportAiFillReady = "lesson_report_ai_fill_ready";
+    /// <summary>Phụ huynh (học sinh ngoài nền tảng) đã liên kết Zalo qua Mini App.
+    /// Referenceid = recorder student_id.</summary>
+    public const string RecorderParentLinked = "recorder_parent_linked";
+    /// <summary>Không gửi được báo cáo buổi học (ghi âm từ app) tới Zalo phụ huynh — gia sư cần tự
+    /// gửi qua Zalo. Referenceid = recorder lesson_id.</summary>
+    public const string RecorderReportDeliveryFailed = "recorder_report_delivery_failed";
     /// <summary>Buổi học bị ngắt giữa chừng, đã tạo buổi phụ để học tiếp trong ngày.
     /// Referenceid = classSessionId của BUỔI PHỤ (không phải buổi gốc).</summary>
     public const string LessonContinuationCreated = "lesson_continuation_created";
