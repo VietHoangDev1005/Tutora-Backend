@@ -30,5 +30,24 @@ namespace MV.DomainLayer.Configuration
         /// thuộc giới hạn này).</summary>
         public int TranscriptMaxOutputTokens { get; set; } = 65536;
         public float Temperature { get; set; } = 0.7f;
+        /// <summary>Có chép lời (transcript) buổi ghi âm app hay không. Transcript KHÔNG hiển thị cho gia sư
+        /// (họp 22/9: gia sư chỉ xem báo cáo + biên bản buổi học) — nó là "nguyên liệu thô" của hệ thống
+        /// (phân tích, hỏi đáp sau này). Vì không ai chờ kết quả nên chép lời chạy nền bằng Gemini Batch
+        /// API (giá 50%), ẩn danh rồi lưu thành file JSON trên kho — xem RecorderTranscriptBatchJob.
+        /// Đặt false (GoogleGemini:GenerateTranscript) để ngừng xếp hàng chép lời các buổi mới.</summary>
+        public bool GenerateTranscript { get; set; } = true;
+
+        /// <summary>Chờ tối thiểu bấy nhiêu phút kể từ buổi xếp hàng sớm nhất rồi mới gửi batch, để gom
+        /// nhiều buổi vào một batch. Không được quá lâu: file audio trên Gemini chỉ sống ~48 giờ.</summary>
+        public int TranscriptBatchDelayMinutes { get; set; } = 30;
+
+        /// <summary>Chép lời qua Gemini Batch API (giá 50%, chậm vài giờ) hay gọi thường (giá đầy đủ, xong
+        /// trong ~30–40 phút). Mặc định TẮT: quy mô hiện tại chênh ~150–200k/tháng, không đáng độ phức tạp;
+        /// Batch API cũng bị từ chối khi project Gemini chưa bật billing. Bật lại khi số buổi lớn.</summary>
+        public bool TranscriptUseBatch { get; set; } = false;
+
+        /// <summary>Giữ file transcript trên kho bao nhiêu ngày (tính từ lúc kết thúc ghi) rồi xoá.
+        /// Luật BVDLCN không cho lưu vô thời hạn — mặc định 2 năm, đổi khi có chính sách chính thức.</summary>
+        public int TranscriptRetentionDays { get; set; } = 730;
     }
 }

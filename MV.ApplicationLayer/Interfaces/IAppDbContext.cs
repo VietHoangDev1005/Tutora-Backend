@@ -37,6 +37,11 @@ public interface IAppDbContext
     DbSet<ClassSessionScheduleChange> ClassSessionScheduleChanges { get; }
     DbSet<ClassSessionRescheduleProposal> ClassSessionRescheduleProposals { get; }
     DbSet<ClassSessionAiJob> ClassSessionAiJobs { get; }
+    DbSet<RecorderStudent> RecorderStudents { get; }
+    DbSet<RecorderLesson> RecorderLessons { get; }
+    DbSet<RecorderParent> RecorderParents { get; }
+    DbSet<RecorderParentInvite> RecorderParentInvites { get; }
+    DbSet<RecorderConsentEvent> RecorderConsentEvents { get; }
     DbSet<SessionEngagementSample> SessionEngagementSamples { get; }
     DbSet<AgoraChannelEvent> AgoraChannelEvents { get; }
     DbSet<SessionParticipant> SessionParticipants { get; }

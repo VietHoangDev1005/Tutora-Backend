@@ -43,24 +43,59 @@ namespace MV.ApplicationLayer.Services
                 }
 
                 // 2. Lấy profile từ Zalo Graph API
-                var profile = await GetZaloProfileAsync(accessToken);
-                if (profile == null || string.IsNullOrEmpty(profile.ZaloId))
-                {
-                    return new TokenResponse { ErrorMessage = "Không lấy được thông tin tài khoản Zalo." };
-                }
-
-                return await _socialRegistrationService.BeginAsync(
-                    SocialAuthProvider.Zalo,
-                    profile.ZaloId,
-                    null,
-                    profile.Name,
-                    profile.Avatar);
+                return await BeginWithAccessTokenAsync(accessToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Lỗi Zalo web login");
                 return new TokenResponse { ErrorMessage = $"Lỗi: {ex.Message}" };
             }
+        }
+
+        public async Task<TokenResponse> LoginWithZaloAccessTokenAsync(ZaloAppLoginRequest request)
+        {
+            try
+            {
+                // Token do Zalo SDK trên app cấp cho CÙNG app_id. Graph API được gọi kèm
+                // secret_key của app nên token của app Zalo khác sẽ không lấy được profile.
+                return await BeginWithAccessTokenAsync(request.AccessToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi Zalo app login");
+                return new TokenResponse { ErrorMessage = $"Lỗi: {ex.Message}" };
+            }
+        }
+
+        public async Task<string?> GetZaloAppUserIdAsync(string accessToken, string? appSecret = null)
+        {
+            if (string.IsNullOrWhiteSpace(accessToken)) return null;
+            try
+            {
+                var profile = await GetZaloProfileAsync(accessToken, appSecret);
+                return string.IsNullOrEmpty(profile?.ZaloId) ? null : profile.ZaloId;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không xác minh được Zalo access token");
+                return null;
+            }
+        }
+
+        private async Task<TokenResponse> BeginWithAccessTokenAsync(string accessToken)
+        {
+            var profile = await GetZaloProfileAsync(accessToken);
+            if (profile == null || string.IsNullOrEmpty(profile.ZaloId))
+            {
+                return new TokenResponse { ErrorMessage = "Không lấy được thông tin tài khoản Zalo." };
+            }
+
+            return await _socialRegistrationService.BeginAsync(
+                SocialAuthProvider.Zalo,
+                profile.ZaloId,
+                null,
+                profile.Name,
+                profile.Avatar);
         }
 
         /// <summary>
@@ -118,12 +153,14 @@ namespace MV.ApplicationLayer.Services
         /// <summary>
         /// Lấy profile người dùng Zalo qua Graph API. Trả về null nếu token sai.
         /// </summary>
-        private async Task<ZaloProfile?> GetZaloProfileAsync(string accessToken)
+        private async Task<ZaloProfile?> GetZaloProfileAsync(string accessToken, string? appSecretOverride = null)
         {
             var client = _httpClientFactory.CreateClient();
-            var appSecret = _configuration[ConfigurationKeys.ZaloOA.SecretKey]
-                ?? _configuration[ConfigurationKeys.ZaloOA.AppSecretKey]
-                ?? string.Empty;
+            var appSecret = !string.IsNullOrWhiteSpace(appSecretOverride)
+                ? appSecretOverride
+                : _configuration[ConfigurationKeys.ZaloOA.SecretKey]
+                    ?? _configuration[ConfigurationKeys.ZaloOA.AppSecretKey]
+                    ?? string.Empty;
 
             // access_token PHẢI đi qua header, không phải query string — Zalo vẫn trả 200 OK khi
             // truyền qua query (kiểu cũ/deprecated) kèm cảnh báo "AccessToken should be placed in

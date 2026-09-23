@@ -12,4 +12,34 @@ public sealed class TutorReportAiFillResult
     public string LessonContent { get; set; } = string.Empty;
     public string Homework { get; set; } = string.Empty;
     public string TutorNotes { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Biên bản buổi học dành riêng cho GIA SƯ (không gửi phụ huynh) — thay cho việc xem lại toàn bộ
+    /// lời thoại/audio. Sinh chung trong cùng lượt gọi Gemini với báo cáo để không tốn thêm một lượt
+    /// nghe audio. Nullable: bản nháp cũ (trước khi có field này) hoặc model bỏ sót thì là null.
+    /// </summary>
+    public TutorSessionMinutes? SessionMinutes { get; set; }
 }
+
+/// <summary>Biên bản buổi học cho gia sư: tóm tắt ngắn, ý chính đã dạy, việc cần nhớ cho buổi sau.</summary>
+public sealed class TutorSessionMinutes
+{
+    /// <summary>2–4 câu tóm tắt buổi học.</summary>
+    public string? Summary { get; set; }
+
+    /// <summary>3–6 ý chính đã dạy/thảo luận.</summary>
+    public List<string> KeyPoints { get; set; } = new();
+
+    /// <summary>0–5 việc gia sư cần làm/nhớ cho buổi sau.</summary>
+    public List<string> FollowUps { get; set; } = new();
+}
+
+/// <summary>Một buổi trong batch chép lời: Key để khớp kết quả trả về (lessonId).</summary>
+public sealed record GeminiBatchAudioItem(string Key, string FileUri, string MimeType);
+
+public enum GeminiBatchState { Running, Succeeded, Failed, Cancelled, Expired }
+
+/// <summary>Kết quả một yêu cầu trong batch. Text null = yêu cầu đó lỗi (xem Error).</summary>
+public sealed record GeminiBatchItemResult(string? Key, string? Text, string? Error);
+
+public sealed record GeminiBatchStatus(GeminiBatchState State, IReadOnlyList<GeminiBatchItemResult> Items, string? RawState);

@@ -78,6 +78,16 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
     public virtual DbSet<ClassSessionRescheduleProposal> ClassSessionRescheduleProposals { get; set; }
     public virtual DbSet<ClassSessionAiJob> ClassSessionAiJobs { get; set; }
 
+    public virtual DbSet<RecorderStudent> RecorderStudents { get; set; }
+
+    public virtual DbSet<RecorderLesson> RecorderLessons { get; set; }
+
+    public virtual DbSet<RecorderParent> RecorderParents { get; set; }
+
+    public virtual DbSet<RecorderParentInvite> RecorderParentInvites { get; set; }
+
+    public virtual DbSet<RecorderConsentEvent> RecorderConsentEvents { get; set; }
+
     public virtual DbSet<SessionEngagementSample> SessionEngagementSamples { get; set; }
 
     public virtual DbSet<AgoraChannelEvent> AgoraChannelEvents { get; set; }
@@ -2033,6 +2043,142 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
                 .HasForeignKey(e => e.Classsessionid)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("class_session_ai_jobs_session_fkey");
+        });
+        // ── Schema recorder: ghi âm từ app gia sư (xem V20260922__recorder_schema.sql) ──
+        modelBuilder.Entity<RecorderStudent>(entity =>
+        {
+            entity.HasKey(e => e.Studentid).HasName("students_pkey");
+            entity.ToTable("students", "recorder");
+
+            entity.Property(e => e.Studentid).HasDefaultValueSql("gen_random_uuid()").HasColumnName("student_id");
+            entity.Property(e => e.Tutorid).HasMaxLength(50).HasColumnName("tutor_id");
+            entity.Property(e => e.Fullname).HasMaxLength(100).HasColumnName("full_name");
+            entity.Property(e => e.Grade).HasColumnName("grade");
+            entity.Property(e => e.Subject).HasMaxLength(100).HasColumnName("subject");
+            entity.Property(e => e.Parentname).HasMaxLength(100).HasColumnName("parent_name");
+            entity.Property(e => e.Parentphone).HasMaxLength(20).HasColumnName("parent_phone");
+            entity.Property(e => e.Consentstatus).HasMaxLength(20).HasColumnName("consent_status");
+            entity.Property(e => e.Consentat).HasColumnType("timestamp without time zone").HasColumnName("consent_at");
+            entity.Property(e => e.Note).HasColumnName("note");
+            entity.Property(e => e.Schedule).HasColumnType("jsonb").HasColumnName("schedule");
+            entity.Property(e => e.Schedulefrom).HasColumnName("schedule_from");
+            entity.Property(e => e.Scheduleuntil).HasColumnName("schedule_until");
+            entity.Property(e => e.Linkedstudentuserid).HasMaxLength(50).HasColumnName("linked_student_user_id");
+            entity.Property(e => e.Parentid).HasColumnName("parent_id");
+            entity.Property(e => e.Parentlinkedat).HasColumnType("timestamp without time zone").HasColumnName("parent_linked_at");
+            entity.Property(e => e.Archivedat).HasColumnType("timestamp without time zone").HasColumnName("archived_at");
+            entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
+            entity.Property(e => e.Updatedat).HasColumnType("timestamp without time zone").HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<RecorderParent>(entity =>
+        {
+            entity.HasKey(e => e.Parentid).HasName("parents_pkey");
+            entity.ToTable("parents", "recorder");
+            entity.HasIndex(e => e.Zalouid, "recorder_parents_zalo_uid_key").IsUnique();
+
+            entity.Property(e => e.Parentid).HasDefaultValueSql("gen_random_uuid()").HasColumnName("parent_id");
+            entity.Property(e => e.Zalouid).HasMaxLength(50).HasColumnName("zalo_uid");
+            entity.Property(e => e.Zaloappuserid).HasMaxLength(50).HasColumnName("zalo_app_user_id");
+            entity.Property(e => e.Displayname).HasMaxLength(100).HasColumnName("display_name");
+            entity.Property(e => e.Isfollower).HasColumnName("is_follower");
+            entity.Property(e => e.Lastinteractionat).HasColumnType("timestamp without time zone").HasColumnName("last_interaction_at");
+            entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
+            entity.Property(e => e.Updatedat).HasColumnType("timestamp without time zone").HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<RecorderParentInvite>(entity =>
+        {
+            entity.HasKey(e => e.Inviteid).HasName("parent_invites_pkey");
+            entity.ToTable("parent_invites", "recorder");
+            entity.HasIndex(e => e.Token, "recorder_parent_invites_token_key").IsUnique();
+
+            entity.Property(e => e.Inviteid).HasDefaultValueSql("gen_random_uuid()").HasColumnName("invite_id");
+            entity.Property(e => e.Studentid).HasColumnName("student_id");
+            entity.Property(e => e.Tutorid).HasMaxLength(50).HasColumnName("tutor_id");
+            entity.Property(e => e.Token).HasMaxLength(64).HasColumnName("token");
+            entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
+            entity.Property(e => e.Expiresat).HasColumnType("timestamp without time zone").HasColumnName("expires_at");
+            entity.Property(e => e.Usedat).HasColumnType("timestamp without time zone").HasColumnName("used_at");
+            entity.Property(e => e.Usedbyparentid).HasColumnName("used_by_parent_id");
+            entity.Property(e => e.Revokedat).HasColumnType("timestamp without time zone").HasColumnName("revoked_at");
+        });
+
+        modelBuilder.Entity<RecorderConsentEvent>(entity =>
+        {
+            entity.HasKey(e => e.Eventid).HasName("consent_events_pkey");
+            entity.ToTable("consent_events", "recorder");
+
+            entity.Property(e => e.Eventid).HasDefaultValueSql("gen_random_uuid()").HasColumnName("event_id");
+            entity.Property(e => e.Studentid).HasColumnName("student_id");
+            entity.Property(e => e.Parentid).HasColumnName("parent_id");
+            entity.Property(e => e.Action).HasMaxLength(20).HasColumnName("action");
+            entity.Property(e => e.Method).HasMaxLength(30).HasColumnName("method");
+            entity.Property(e => e.Consentversion).HasMaxLength(30).HasColumnName("consent_version");
+            entity.Property(e => e.Zalouid).HasMaxLength(50).HasColumnName("zalo_uid");
+            entity.Property(e => e.Ipaddress).HasMaxLength(64).HasColumnName("ip_address");
+            entity.Property(e => e.Useragent).HasColumnName("user_agent");
+            entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<RecorderLesson>(entity =>
+        {
+            entity.HasKey(e => e.Lessonid).HasName("lessons_pkey");
+            entity.ToTable("lessons", "recorder");
+
+            entity.Property(e => e.Lessonid).HasDefaultValueSql("gen_random_uuid()").HasColumnName("lesson_id");
+            entity.Property(e => e.Tutorid).HasMaxLength(50).HasColumnName("tutor_id");
+            entity.Property(e => e.Studentid).HasColumnName("student_id");
+            entity.Property(e => e.Classsessionid).HasColumnName("class_session_id");
+            entity.Property(e => e.Scheduledstart).HasColumnType("timestamp without time zone").HasColumnName("scheduled_start");
+            entity.Property(e => e.Scheduledend).HasColumnType("timestamp without time zone").HasColumnName("scheduled_end");
+            entity.Property(e => e.Subject).HasMaxLength(100).HasColumnName("subject");
+            entity.Property(e => e.Status).HasMaxLength(20).HasColumnName("status");
+            entity.Property(e => e.Startedat).HasColumnType("timestamp without time zone").HasColumnName("started_at");
+            entity.Property(e => e.Endedat).HasColumnType("timestamp without time zone").HasColumnName("ended_at");
+            entity.Property(e => e.Durationsec).HasColumnName("duration_sec");
+            entity.Property(e => e.Bytes).HasColumnName("bytes");
+            entity.Property(e => e.Partcount).HasColumnName("part_count");
+            entity.Property(e => e.Storagekey).HasColumnName("storage_key");
+            entity.Property(e => e.Consentsnapshot).HasColumnType("jsonb").HasColumnName("consent_snapshot");
+            entity.Property(e => e.Aistatus).HasMaxLength(20).HasColumnName("ai_status");
+            entity.Property(e => e.Airesult).HasColumnType("jsonb").HasColumnName("ai_result");
+            entity.Property(e => e.Aierror).HasColumnName("ai_error");
+            entity.Property(e => e.Geminifilename).HasColumnName("gemini_file_name");
+            entity.Property(e => e.Geminifileuri).HasColumnName("gemini_file_uri");
+            entity.Property(e => e.Geminifileexpiresat).HasColumnType("timestamp without time zone").HasColumnName("gemini_file_expires_at");
+            entity.Property(e => e.Reportcontent).HasColumnName("report_content");
+            entity.Property(e => e.Reporthomework).HasColumnName("report_homework");
+            entity.Property(e => e.Reportnotes).HasColumnName("report_notes");
+            entity.Property(e => e.Approvedat).HasColumnType("timestamp without time zone").HasColumnName("approved_at");
+            entity.Property(e => e.Deliverychannel).HasMaxLength(20).HasColumnName("delivery_channel");
+            entity.Property(e => e.Deliverystatus).HasMaxLength(20).HasColumnName("delivery_status");
+            entity.Property(e => e.Deliveryerror).HasColumnName("delivery_error");
+            entity.Property(e => e.Sentat).HasColumnType("timestamp without time zone").HasColumnName("sent_at");
+            entity.Property(e => e.Transcript).HasColumnName("transcript");
+            entity.Property(e => e.Transcriptstatus).HasMaxLength(20).HasColumnName("transcript_status");
+            entity.Property(e => e.Transcripterror).HasColumnName("transcript_error");
+            entity.Property(e => e.Transcriptkey).HasColumnName("transcript_key");
+            entity.Property(e => e.Transcriptmodel).HasMaxLength(60).HasColumnName("transcript_model");
+            entity.Property(e => e.Transcriptbatch).HasMaxLength(100).HasColumnName("transcript_batch");
+            entity.Property(e => e.Transcriptqueuedat).HasColumnType("timestamp without time zone").HasColumnName("transcript_queued_at");
+            entity.Property(e => e.Audiokey).HasColumnName("audio_key");
+            entity.Property(e => e.Audiodeletedat).HasColumnType("timestamp without time zone").HasColumnName("audio_deleted_at");
+            entity.Property(e => e.Errormessage).HasColumnName("error_message");
+            entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
+            entity.Property(e => e.Updatedat).HasColumnType("timestamp without time zone").HasColumnName("updated_at");
+
+            entity.HasOne(e => e.Student)
+                .WithMany()
+                .HasForeignKey(e => e.Studentid)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("recorder_lessons_student_fkey");
+
+            entity.HasOne(e => e.ClassSession)
+                .WithMany()
+                .HasForeignKey(e => e.Classsessionid)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("recorder_lessons_session_fkey");
         });
         modelBuilder.Entity<Notification>(entity =>
         {
