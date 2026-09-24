@@ -81,7 +81,7 @@ namespace MV.ApplicationLayer.Services
             var result = await _ekyc.VerifyAndApplyAsync(user, request, new EkycVerificationOptions
             {
                 RequireOcr = false,
-                MinAgeRequired = null,
+                MinAgeRequired = AgeHelper.MinTutorAge, // gia sư phải từ 18 tuổi
                 AutoFillProfile = false
             });
 

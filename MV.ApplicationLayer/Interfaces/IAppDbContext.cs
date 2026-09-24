@@ -42,6 +42,7 @@ public interface IAppDbContext
     DbSet<RecorderParent> RecorderParents { get; }
     DbSet<RecorderParentInvite> RecorderParentInvites { get; }
     DbSet<RecorderConsentEvent> RecorderConsentEvents { get; }
+    DbSet<RecorderAiFeedback> RecorderAiFeedbacks { get; }
     DbSet<SessionEngagementSample> SessionEngagementSamples { get; }
     DbSet<AgoraChannelEvent> AgoraChannelEvents { get; }
     DbSet<SessionParticipant> SessionParticipants { get; }
@@ -70,6 +71,9 @@ public interface IAppDbContext
     DbSet<Chapter> Chapters { get; }
     DbSet<QuestionType> QuestionTypes { get; }
     DbSet<PolicyDocument> PolicyDocuments { get; }
+
+    /// <summary>Bằng chứng đồng ý Điều khoản / Chính sách lúc đăng ký — xem user_policy_acceptances.</summary>
+    DbSet<UserPolicyAcceptance> UserPolicyAcceptances { get; }
 
     DbSet<Systemconfig> Systemconfigs { get; }
 

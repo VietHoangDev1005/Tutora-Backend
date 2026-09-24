@@ -88,6 +88,8 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
 
     public virtual DbSet<RecorderConsentEvent> RecorderConsentEvents { get; set; }
 
+    public virtual DbSet<RecorderAiFeedback> RecorderAiFeedbacks { get; set; }
+
     public virtual DbSet<SessionEngagementSample> SessionEngagementSamples { get; set; }
 
     public virtual DbSet<AgoraChannelEvent> AgoraChannelEvents { get; set; }
@@ -170,6 +172,8 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
     public virtual DbSet<Subject> Subjects { get; set; }
 
     public virtual DbSet<PolicyDocument> PolicyDocuments { get; set; }
+
+    public virtual DbSet<UserPolicyAcceptance> UserPolicyAcceptances { get; set; }
 
     public virtual DbSet<Systemconfig> Systemconfigs { get; set; }
 
@@ -2059,6 +2063,7 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
             entity.Property(e => e.Parentphone).HasMaxLength(20).HasColumnName("parent_phone");
             entity.Property(e => e.Consentstatus).HasMaxLength(20).HasColumnName("consent_status");
             entity.Property(e => e.Consentat).HasColumnType("timestamp without time zone").HasColumnName("consent_at");
+            entity.Property(e => e.Consentversion).HasMaxLength(30).HasColumnName("consent_version");
             entity.Property(e => e.Note).HasColumnName("note");
             entity.Property(e => e.Schedule).HasColumnType("jsonb").HasColumnName("schedule");
             entity.Property(e => e.Schedulefrom).HasColumnName("schedule_from");
@@ -2121,6 +2126,19 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
             entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
         });
 
+        modelBuilder.Entity<RecorderAiFeedback>(entity =>
+        {
+            entity.HasKey(e => e.Feedbackid).HasName("ai_feedback_pkey");
+            entity.ToTable("ai_feedback", "recorder");
+
+            entity.Property(e => e.Feedbackid).HasDefaultValueSql("gen_random_uuid()").HasColumnName("feedback_id");
+            entity.Property(e => e.Lessonid).HasColumnName("lesson_id");
+            entity.Property(e => e.Tutorid).HasMaxLength(50).HasColumnName("tutor_id");
+            entity.Property(e => e.Reason).HasMaxLength(30).HasColumnName("reason");
+            entity.Property(e => e.Note).HasMaxLength(1000).HasColumnName("note");
+            entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
+        });
+
         modelBuilder.Entity<RecorderLesson>(entity =>
         {
             entity.HasKey(e => e.Lessonid).HasName("lessons_pkey");
@@ -2150,6 +2168,9 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
             entity.Property(e => e.Reportcontent).HasColumnName("report_content");
             entity.Property(e => e.Reporthomework).HasColumnName("report_homework");
             entity.Property(e => e.Reportnotes).HasColumnName("report_notes");
+            entity.Property(e => e.Zalocontent).HasMaxLength(200).HasColumnName("zalo_content");
+            entity.Property(e => e.Zalohomework).HasMaxLength(200).HasColumnName("zalo_homework");
+            entity.Property(e => e.Zalonotes).HasMaxLength(200).HasColumnName("zalo_notes");
             entity.Property(e => e.Approvedat).HasColumnType("timestamp without time zone").HasColumnName("approved_at");
             entity.Property(e => e.Deliverychannel).HasMaxLength(20).HasColumnName("delivery_channel");
             entity.Property(e => e.Deliverystatus).HasMaxLength(20).HasColumnName("delivery_status");
@@ -2466,6 +2487,30 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
             entity.HasOne(d => d.MaxGradeLevel).WithMany()
                 .HasForeignKey(d => d.MaxGradeLevelId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserPolicyAcceptance>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("user_policy_acceptances_pkey");
+
+            entity.ToTable("user_policy_acceptances");
+
+            entity.HasIndex(e => e.Userid, "idx_user_policy_acceptances_user");
+            entity.HasIndex(e => new { e.Userid, e.Policyslug, e.Policyversion }, "uq_user_policy_acceptances_user_slug_version").IsUnique();
+
+            entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
+            entity.Property(e => e.Userid).HasMaxLength(50).HasColumnName("user_id");
+            entity.Property(e => e.Policyslug).HasMaxLength(80).HasColumnName("policy_slug");
+            entity.Property(e => e.Policyversion).HasMaxLength(20).HasColumnName("policy_version");
+            entity.Property(e => e.Acceptedat).HasColumnType("timestamp without time zone").HasColumnName("accepted_at");
+            entity.Property(e => e.Source).HasMaxLength(20).HasColumnName("source");
+            entity.Property(e => e.Ipaddress).HasMaxLength(64).HasColumnName("ip_address");
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(e => e.Userid)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("user_policy_acceptances_user_fkey");
         });
 
         modelBuilder.Entity<PolicyDocument>(entity =>
@@ -3588,6 +3633,15 @@ entity.HasOne(d => d.Tutor).WithOne(p => p.Tutorprofile)
             entity.Property(e => e.Deletedat)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("deleted_at");
+            entity.Property(e => e.Deletionsource)
+                .HasMaxLength(20)
+                .HasColumnName("deletion_source");
+            entity.Property(e => e.Deletionreason)
+                .HasMaxLength(500)
+                .HasColumnName("deletion_reason");
+            entity.Property(e => e.Purgedat)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("purged_at");
             entity.Property(e => e.AiCreditsBalance)
                 .HasDefaultValue(0)
                 .HasColumnName("ai_credits_balance");

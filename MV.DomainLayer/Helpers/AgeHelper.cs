@@ -11,6 +11,11 @@ public static class AgeHelper
     public const int MinSelfBookingAge = 16;
 
     /// <summary>
+    /// Độ tuổi tối thiểu của gia sư (web, app ghi âm và backend cùng áp dụng).
+    /// </summary>
+    public const int MinTutorAge = 18;
+
+    /// <summary>
     /// Số tuổi (năm) tính đến hôm nay theo ngày sinh.
     /// </summary>
     public static int CalculateAge(DateOnly birthdate)
@@ -31,4 +36,10 @@ public static class AgeHelper
     /// </summary>
     public static bool IsOldEnoughToSelfBook(DateOnly? birthdate)
         => birthdate.HasValue && CalculateAge(birthdate.Value) >= MinSelfBookingAge;
+
+    /// <summary>
+    /// Đủ tuổi làm gia sư chưa. Ngày sinh ở tương lai tính là 0 tuổi nên cũng bị chặn.
+    /// </summary>
+    public static bool IsOldEnoughToTutor(DateOnly birthdate)
+        => CalculateAge(birthdate) >= MinTutorAge;
 }

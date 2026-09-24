@@ -15,7 +15,7 @@ namespace MV.ApplicationLayer.Services;
 /// Danh bạ học sinh ngoài nền tảng + nhật ký buổi dạy. Chỉ đọc/ghi schema
 /// recorder; không tạo user, booking hay class_session nào.
 /// </summary>
-public class RecorderService(IAppDbContext db) : IRecorderService
+public class RecorderService(IAppDbContext db, IAppRecordingStorage storage) : IRecorderService
 {
     // ── Học sinh ─────────────────────────────────────────────────────────────
 
@@ -60,6 +60,13 @@ public class RecorderService(IAppDbContext db) : IRecorderService
 
     public async Task<RecorderStudentResponse> CreateStudentAsync(string tutorId, RecorderStudentRequest request, CancellationToken ct = default)
     {
+        // Google Play + Luật BVDLCN: không thêm học sinh khi chưa có xác nhận phụ huynh đồng ý ghi âm.
+        if (!request.ParentConsent)
+            throw new RecorderNotReadyException(
+                "Cần xác nhận phụ huynh đã đọc và đồng ý nội dung ghi âm trước khi thêm học sinh.");
+        // Kiểm tra lịch TRƯỚC khi lưu học sinh — lỗi lịch không được để lại học sinh "nửa vời".
+        if (request.Schedule != null)
+            await ValidateScheduleAsync(tutorId, null, request.Schedule, request.ScheduleFrom, request.ScheduleUntil, ct);
         var now = TimeZoneHelper.UtcNow;
         var s = new RecorderStudent
         {
@@ -69,9 +76,10 @@ public class RecorderService(IAppDbContext db) : IRecorderService
             Createdat = now,
             Updatedat = now
         };
-        Apply(s, request, now);
+        var consentChange = Apply(s, request, now);
         db.RecorderStudents.Add(s);
         await db.SaveChangesAsync(ct);
+        await LogConsentChangeAsync(s, consentChange, now, ct);
         if (request.Schedule != null)
             await ReplaceScheduleAsync(s, request.Schedule, request.ScheduleFrom, request.ScheduleUntil, ct);
         return ToResponse(s, 0, null);
@@ -80,18 +88,38 @@ public class RecorderService(IAppDbContext db) : IRecorderService
     public async Task<RecorderStudentResponse> UpdateStudentAsync(Guid studentId, string tutorId, RecorderStudentRequest request, CancellationToken ct = default)
     {
         var s = await LoadStudentAsync(studentId, tutorId, ct);
-        Apply(s, request, TimeZoneHelper.UtcNow);
+        if (request.Schedule != null)
+            await ValidateScheduleAsync(tutorId, studentId, request.Schedule, request.ScheduleFrom, request.ScheduleUntil, ct);
+        var now = TimeZoneHelper.UtcNow;
+        var consentChange = Apply(s, request, now);
         await db.SaveChangesAsync(ct);
+        await LogConsentChangeAsync(s, consentChange, now, ct);
         if (request.Schedule != null)
             await ReplaceScheduleAsync(s, request.Schedule, request.ScheduleFrom, request.ScheduleUntil, ct);
         return await GetStudentAsync(studentId, tutorId, ct);
     }
 
-    public async Task ArchiveStudentAsync(Guid studentId, string tutorId, CancellationToken ct = default)
+    public async Task DeleteStudentPermanentlyAsync(Guid studentId, string tutorId, CancellationToken ct = default)
     {
         var s = await LoadStudentAsync(studentId, tutorId, ct);
-        s.Archivedat = TimeZoneHelper.UtcNow;
-        s.Updatedat = s.Archivedat.Value;
+        var lessons = await db.RecorderLessons.Where(l => l.Studentid == studentId).ToListAsync(ct);
+
+        // File trước, DB sau: xoá file lỗi thì học sinh vẫn còn để thử lại, không để file mồ côi.
+        var hasFiles = lessons.Any(l => !string.IsNullOrWhiteSpace(l.Storagekey)
+                                        || !string.IsNullOrWhiteSpace(l.Transcriptkey));
+        if (hasFiles && !storage.Enabled)
+            throw new RecorderNotReadyException("Chưa xoá được file ghi âm. Vui lòng thử lại sau.");
+        foreach (var lesson in lessons)
+        {
+            if (!string.IsNullOrWhiteSpace(lesson.Storagekey))
+                await storage.DeletePrefixAsync(lesson.Storagekey!, ct);
+            if (!string.IsNullOrWhiteSpace(lesson.Transcriptkey))
+                await storage.DeleteTranscriptAsync(lesson.Transcriptkey!, ct);
+        }
+
+        // Buổi, lời mời phụ huynh, nhật ký đồng ý, báo nội dung AI: FK ON DELETE CASCADE ở DB.
+        db.RecorderLessons.RemoveRange(lessons);
+        db.RecorderStudents.Remove(s);
         await db.SaveChangesAsync(ct);
     }
 
@@ -184,6 +212,78 @@ public class RecorderService(IAppDbContext db) : IRecorderService
         }
     }
 
+    /// <summary>Lịch lặp tối đa bao nhiêu tháng (app cũng giới hạn như vậy).</summary>
+    private const int MaxScheduleMonths = 6;
+
+    private static readonly string[] DayNames = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
+
+    /// <summary>Khoảng ngày của lịch: kết thúc không trước ngày bắt đầu, tối đa [MaxScheduleMonths] tháng.</summary>
+    private static void ValidateScheduleRange(DateOnly? from, DateOnly? until)
+    {
+        if (until is not DateOnly u) return;
+        var startDay = from ?? DateOnly.FromDateTime(TimeZoneHelper.ToVietnamTime(TimeZoneHelper.UtcNow));
+        if (u < startDay)
+            throw new RecorderNotReadyException("Ngày kết thúc phải sau ngày bắt đầu.");
+        if (u > startDay.AddMonths(MaxScheduleMonths))
+            throw new RecorderNotReadyException($"Lịch học tối đa {MaxScheduleMonths} tháng — gia hạn sau bằng cách sửa ngày.");
+    }
+
+    /// <summary>
+    /// Kiểm tra lịch hằng tuần: giờ hợp lệ, không trùng giờ trong chính lịch này, và không trùng
+    /// giờ với lịch của học sinh khác (còn hoạt động) của cùng gia sư trong khoảng ngày giao nhau.
+    /// </summary>
+    private async Task ValidateScheduleAsync(
+        string tutorId, Guid? studentId, List<RecorderScheduleSlot> slots, DateOnly? from, DateOnly? until,
+        CancellationToken ct)
+    {
+        ValidateScheduleRange(from, until);
+        if (slots.Count == 0) return;
+
+        var parsed = new List<(int Day, TimeOnly Start, TimeOnly End)>();
+        foreach (var slot in slots)
+        {
+            if (!TryParseTime(slot.Start, out var a) || !TryParseTime(slot.End, out var b) || b <= a)
+                throw new RecorderNotReadyException("Giờ kết thúc phải sau giờ bắt đầu.");
+            parsed.Add((slot.DayOfWeek, a, b));
+        }
+
+        for (var i = 0; i < parsed.Count; i++)
+            for (var j = i + 1; j < parsed.Count; j++)
+                if (parsed[i].Day == parsed[j].Day
+                    && parsed[i].Start < parsed[j].End && parsed[j].Start < parsed[i].End)
+                    throw new RecorderNotReadyException(
+                        $"Lịch bị trùng giờ: {DayNames[parsed[i].Day - 1]} {parsed[i].Start:HH\\:mm}–{parsed[i].End:HH\\:mm} và {parsed[j].Start:HH\\:mm}–{parsed[j].End:HH\\:mm}.");
+
+        var todayVn = DateOnly.FromDateTime(TimeZoneHelper.ToVietnamTime(TimeZoneHelper.UtcNow));
+        var myFrom = from ?? todayVn;
+        var myUntil = until ?? DateOnly.MaxValue;
+
+        var others = await db.RecorderStudents
+            .Where(o => o.Tutorid == tutorId && o.Archivedat == null && o.Schedule != null
+                && (studentId == null || o.Studentid != studentId))
+            .Select(o => new { o.Fullname, o.Schedule, o.Schedulefrom, o.Scheduleuntil })
+            .ToListAsync(ct);
+
+        foreach (var o in others)
+        {
+            var oFrom = o.Schedulefrom ?? DateOnly.MinValue;
+            var oUntil = o.Scheduleuntil ?? DateOnly.MaxValue;
+            // Lịch của học sinh kia đã kết thúc hoặc không giao khoảng ngày → không trùng.
+            if (oUntil < todayVn || oUntil < myFrom || myUntil < oFrom) continue;
+
+            foreach (var os in ParseSchedule(o.Schedule))
+            {
+                if (!TryParseTime(os.Start, out var oa) || !TryParseTime(os.End, out var ob)) continue;
+                foreach (var (day, a, b) in parsed)
+                {
+                    if (day == os.DayOfWeek && a < ob && oa < b)
+                        throw new RecorderNotReadyException(
+                            $"Trùng lịch với học sinh {o.Fullname}: {DayNames[day - 1]} {oa:HH\\:mm}–{ob:HH\\:mm}. Đổi giờ hoặc ngày học.");
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// Lưu lịch mới, bỏ các buổi CHƯA ghi từ hôm nay trở đi của lịch cũ rồi sinh lại.
     /// Buổi đã ghi / đã gửi báo cáo không bao giờ bị đụng.
@@ -199,13 +299,6 @@ public class RecorderService(IAppDbContext db) : IRecorderService
 
         var todayVn = DateOnly.FromDateTime(TimeZoneHelper.ToVietnamTime(TimeZoneHelper.UtcNow));
         var startDay = from ?? todayVn;
-        if (until is DateOnly u)
-        {
-            if (u < startDay)
-                throw new RecorderNotReadyException("Ngày kết thúc phải sau ngày bắt đầu.");
-            if (u > startDay.AddYears(1))
-                throw new RecorderNotReadyException("Lịch học tối đa 1 năm.");
-        }
         var fromUtc = VnToUtc(todayVn, TimeOnly.MinValue);
 
         var stale = await db.RecorderLessons
@@ -316,7 +409,27 @@ public class RecorderService(IAppDbContext db) : IRecorderService
             s => s.Studentid == studentId && s.Tutorid == tutorId && s.Archivedat == null, ct)
         ?? throw new RecorderNotFoundException("Không tìm thấy học sinh.");
 
-    private static void Apply(RecorderStudent s, RecorderStudentRequest r, DateTime now)
+    /// <summary>
+    /// Ghi nhật ký đồng ý (recorder.consent_events) — bằng chứng gia sư xác nhận phụ huynh
+    /// đã đồng ý nội dung ghi âm phiên bản nào, lúc nào. Lưu sau khi học sinh đã có trong DB (FK).
+    /// </summary>
+    private async Task LogConsentChangeAsync(RecorderStudent s, string? action, DateTime now, CancellationToken ct)
+    {
+        if (action == null) return;
+        db.RecorderConsentEvents.Add(new RecorderConsentEvent
+        {
+            Eventid = Guid.NewGuid(),
+            Studentid = s.Studentid,
+            Action = action,
+            Method = RecorderConsentMethod.Tutor,
+            Consentversion = s.Consentversion,
+            Createdat = now
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <returns>Hành động đồng ý cần ghi nhật ký (granted/withdrawn) hoặc null nếu không đổi.</returns>
+    private static string? Apply(RecorderStudent s, RecorderStudentRequest r, DateTime now)
     {
         s.Fullname = r.FullName.Trim();
         s.Grade = r.Grade;
@@ -328,29 +441,35 @@ public class RecorderService(IAppDbContext db) : IRecorderService
 
         // Gia sư chỉ nâng được lên tutor_confirmed; không hạ parent_confirmed/declined
         // (hai trạng thái đó do phụ huynh tự quyết qua ZNS).
+        var version = string.IsNullOrWhiteSpace(r.ConsentVersion) ? RecorderConsentText.LegacyVersion : r.ConsentVersion.Trim();
         if (r.ParentConsent && s.Consentstatus == RecorderConsentStatus.Unknown)
         {
             s.Consentstatus = RecorderConsentStatus.TutorConfirmed;
             s.Consentat = now;
+            s.Consentversion = version;
+            return RecorderConsentAction.Granted;
         }
-        else if (!r.ParentConsent && s.Consentstatus == RecorderConsentStatus.TutorConfirmed)
+        if (r.ParentConsent && s.Consentstatus == RecorderConsentStatus.TutorConfirmed
+            && !string.Equals(s.Consentversion, version, StringComparison.Ordinal))
+        {
+            // Phụ huynh đồng ý lại theo nội dung phiên bản mới.
+            s.Consentat = now;
+            s.Consentversion = version;
+            return RecorderConsentAction.Granted;
+        }
+        if (!r.ParentConsent && s.Consentstatus == RecorderConsentStatus.TutorConfirmed)
         {
             s.Consentstatus = RecorderConsentStatus.Unknown;
             s.Consentat = null;
+            return RecorderConsentAction.Withdrawn;
         }
+        return null;
     }
 
     private static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
 
-    /// <summary>+84 / 84 → 0 để một số điện thoại chỉ có một cách viết.</summary>
-    private static string? NormalizePhone(string? phone)
-    {
-        var p = Clean(phone)?.Replace(" ", "").Replace(".", "");
-        if (p == null) return null;
-        if (p.StartsWith("+84")) return "0" + p[3..];
-        if (p.StartsWith("84") && p.Length >= 11) return "0" + p[2..];
-        return p;
-    }
+    /// <summary>0… / 84… → +84… để một số điện thoại chỉ có một cách viết (cùng dạng với users.phone).</summary>
+    private static string? NormalizePhone(string? phone) => PhoneNumberHelper.ToE164(phone);
 
     private static DateTime ToUtc(DateTime d) => d.Kind switch
     {
@@ -387,6 +506,8 @@ public class RecorderService(IAppDbContext db) : IRecorderService
         ParentName = s.Parentname,
         ParentPhone = s.Parentphone,
         ConsentStatus = s.Consentstatus,
+        ConsentVersion = s.Consentversion,
+        ConsentAt = s.Consentat,
         Note = s.Note,
         Schedule = ParseSchedule(s.Schedule),
         ScheduleFrom = s.Schedulefrom,

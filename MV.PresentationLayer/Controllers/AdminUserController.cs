@@ -218,6 +218,10 @@ public class AdminUserController : ControllerBase
         {
             return NotFound(APIResponse<object>.Fail(ex.Message, 404));
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(APIResponse<object>.Fail(ex.Message, 400));
+        }
         catch (Exception ex)
         {
             return StatusCode(500, APIResponse<object>.Fail(ApiMessages.GenericErrorPrefix + ex.Message, 500));

@@ -38,12 +38,15 @@ public class RecorderController(IRecorderService service, IRecorderParentLinkSer
     public async Task<IActionResult> UpdateStudent(Guid studentId, [FromBody] RecorderStudentRequest body, CancellationToken ct) =>
         Ok(APIResponse<object>.Success(await service.UpdateStudentAsync(studentId, UserId, body, ct), "Đã cập nhật học sinh."));
 
-    /// <summary>Ẩn học sinh khỏi danh bạ; lịch sử báo cáo vẫn giữ.</summary>
+    /// <summary>
+    /// Xoá vĩnh viễn học sinh và toàn bộ dữ liệu (ghi âm, bản chép lời, báo cáo, đồng ý).
+    /// Không khôi phục được. (Tính năng "ẩn học sinh" đã bỏ.)
+    /// </summary>
     [HttpDelete("students/{studentId:guid}")]
-    public async Task<IActionResult> ArchiveStudent(Guid studentId, CancellationToken ct)
+    public async Task<IActionResult> DeleteStudentPermanently(Guid studentId, CancellationToken ct)
     {
-        await service.ArchiveStudentAsync(studentId, UserId, ct);
-        return Ok(APIResponse<object>.Success(new { }, "Đã ẩn học sinh."));
+        await service.DeleteStudentPermanentlyAsync(studentId, UserId, ct);
+        return Ok(APIResponse<object>.Success(new { }, "Đã xoá học sinh và toàn bộ dữ liệu."));
     }
 
     // ── Liên kết Zalo phụ huynh ─────────────────────────────────────────────

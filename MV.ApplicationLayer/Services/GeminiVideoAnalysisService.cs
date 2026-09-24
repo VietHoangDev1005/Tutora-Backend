@@ -286,6 +286,24 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
             - followUps: 0–5 việc gia sư cần làm/nhớ cho buổi sau (ví dụ: kiểm tra bài tập đã giao, ôn lại
               phần học sinh còn yếu, chuẩn bị tài liệu đã hứa). Mỗi việc một câu ngắn. CHỈ ghi những việc có
               căn cứ từ audio — nếu không có gì thì trả về mảng rỗng, không bịa ra.
+
+            PHẦN 3 — zaloSummary: BẢN TÓM TẮT GỬI PHỤ HUYNH QUA TIN ZALO (hiển thị trong một ô bảng rất
+            hẹp). Rút gọn từ PHẦN 1, gồm:
+            - content: tóm tắt nội dung đã dạy.
+            - homework: bài tập về nhà — CHỈ ghi bài tập gia sư THẬT SỰ giao trong audio. Nếu không có,
+              PHẢI ghi chính xác "Không có bài tập về nhà."
+            - notes: nhận xét về buổi học — CHỈ ghi điều THẬT SỰ quan sát/nghe được trong audio. Nếu không
+              có, PHẢI ghi chính xác "Không có nhận xét thêm."
+            Quy tắc BẮT BUỘC cho cả 3 field:
+            - Mỗi field 1–2 câu tiếng Việt hoàn chỉnh, dài khoảng 100–160 ký tự và TUYỆT ĐỐI KHÔNG quá
+              180 ký tự (đếm cả dấu cách). Câu phải trọn ý, không bị bỏ lửng giữa chừng. Nội dung ít thì
+              viết ngắn hơn, không kéo dài cho đủ độ dài.
+            - Phụ huynh CHỈ đọc được phần này qua tin Zalo (không có bản đầy đủ), nên chọn đúng ý quan
+              trọng nhất: học gì, con làm được/chưa được gì, cần làm gì tiếp.
+            - Chỉ văn bản thuần: không markdown (không #, *, -, gạch đầu dòng), không công thức LaTeX hay ký
+              hiệu $, không emoji, không xuống dòng.
+            - Không viết tắt (viết đầy đủ "Học sinh", "bài tập", "phương trình"... không viết "HS", "BT", "PT").
+            - Gọi học sinh là "con", không dùng từ chỉ giới tính (không "bạn nam", "cô bé", "cậu bé"...).
             """;
 
         var schema = new GeminiSchema
@@ -306,9 +324,20 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
                         ["followUps"] = new() { Type = "ARRAY", Items = new() { Type = "STRING" } }
                     },
                     Required = ["summary", "keyPoints", "followUps"]
+                },
+                ["zaloSummary"] = new()
+                {
+                    Type = "OBJECT",
+                    Properties = new Dictionary<string, GeminiSchema>
+                    {
+                        ["content"] = new() { Type = "STRING" },
+                        ["homework"] = new() { Type = "STRING" },
+                        ["notes"] = new() { Type = "STRING" }
+                    },
+                    Required = ["content", "homework", "notes"]
                 }
             },
-            Required = ["lessonContent", "homework", "tutorNotes", "sessionMinutes"]
+            Required = ["lessonContent", "homework", "tutorNotes", "sessionMinutes", "zaloSummary"]
         };
 
         var requestBody = BuildGenerateContentRequest(fileUri, mimeType, prompt, schema);
@@ -328,8 +357,56 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
             parsed.Homework = "Không đề cập giao bài tập.";
 
         parsed.SessionMinutes = NormalizeSessionMinutes(parsed.SessionMinutes);
+        parsed.ZaloSummary = NormalizeZaloSummary(parsed.ZaloSummary);
 
         return parsed;
+    }
+
+    /// <summary>
+    /// Giới hạn tham số content/homework/note của template ZBS 640496 (loại "Tên sản phẩm / Thương
+    /// hiệu", 200 ký tự). Prompt nhắm ≤ 180 để chừa biên khi model đếm sai.
+    /// </summary>
+    private const int ZaloSummaryMax = 200;
+
+    /// <summary>
+    /// Tóm tắt Zalo là phần phụ — model trả thiếu thì bỏ qua (job gửi tự fallback về bản đầy đủ bị cắt).
+    /// Model có thể lờ quy tắc trong prompt nên code chuẩn hoá lại: một dòng, bỏ ký tự markdown/LaTeX,
+    /// cắt ở 200 ký tự (ưu tiên cắt tại dấu hết câu để câu không bị cụt).
+    /// </summary>
+    private static TutorZaloSummary? NormalizeZaloSummary(TutorZaloSummary? summary)
+    {
+        if (summary is null) return null;
+
+        summary.Content = CleanZaloText(summary.Content);
+        summary.Homework = CleanZaloText(summary.Homework);
+        summary.Notes = CleanZaloText(summary.Notes);
+
+        if (summary.Content is null && summary.Homework is null && summary.Notes is null)
+            return null;
+        return summary;
+    }
+
+    private static string? CleanZaloText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (ch is '#' or '*' or '$' or '`') continue;
+            sb.Append(ch);
+        }
+        var text = string.Join(' ', sb.ToString().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (text.Length == 0) return null;
+        if (text.Length <= ZaloSummaryMax) return text;
+
+        // Quá dài: giữ lại các câu trọn vẹn nếu còn đủ ý (≥ 1/2 giới hạn), không thì cắt theo từ.
+        var head = text[..ZaloSummaryMax];
+        var lastStop = head.LastIndexOfAny(new[] { '.', '!', '?', ';' });
+        if (lastStop >= ZaloSummaryMax / 2) return head[..(lastStop + 1)].TrimEnd();
+        var lastSpace = head.LastIndexOf(' ', ZaloSummaryMax - 2);
+        var cut = lastSpace > 0 ? lastSpace : ZaloSummaryMax - 1;
+        return text[..cut].TrimEnd(' ', ',', ';', ':') + "…";
     }
 
     /// <summary>

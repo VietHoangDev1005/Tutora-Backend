@@ -44,10 +44,10 @@ namespace MV.ApplicationLayer.Services
                     return (false, "Mật khẩu cũ không đúng.");
                 }
 
-                // 3. Validate new password (optional: add more rules)
-                if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 6)
+                // 3. Validate new password — cùng quy định với web (TutorAccount/StudentAccount/ParentAccount)
+                if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
                 {
-                    return (false, "Mật khẩu mới phải có ít nhất 6 ký tự.");
+                    return (false, "Mật khẩu mới phải có ít nhất 8 ký tự.");
                 }
 
                 if (oldPassword == newPassword)

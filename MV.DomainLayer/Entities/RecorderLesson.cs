@@ -41,6 +41,14 @@ public class RecorderLesson
     public string? Reportcontent { get; set; }
     public string? Reporthomework { get; set; }
     public string? Reportnotes { get; set; }
+
+    /// <summary>
+    /// Bản tóm tắt ngắn (≤ 90 ký tự) đã duyệt để gửi phụ huynh qua tin Zalo — bản nháp AI nằm trong
+    /// <see cref="Airesult"/> (ZaloSummary). Null thì job gửi fallback về báo cáo đầy đủ bị cắt ngắn.
+    /// </summary>
+    public string? Zalocontent { get; set; }
+    public string? Zalohomework { get; set; }
+    public string? Zalonotes { get; set; }
     public DateTime? Approvedat { get; set; }
     public string? Deliverychannel { get; set; }
     public string? Deliverystatus { get; set; }
