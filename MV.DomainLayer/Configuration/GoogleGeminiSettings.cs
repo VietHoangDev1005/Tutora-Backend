@@ -48,6 +48,6 @@ namespace MV.DomainLayer.Configuration
 
         /// <summary>Giữ file transcript trên kho bao nhiêu ngày (tính từ lúc kết thúc ghi) rồi xoá.
         /// Luật BVDLCN không cho lưu vô thời hạn — mặc định 2 năm, đổi khi có chính sách chính thức.</summary>
-        public int TranscriptRetentionDays { get; set; } = 730;
+        public int TranscriptRetentionDays { get; set; } = 180;
     }
 }

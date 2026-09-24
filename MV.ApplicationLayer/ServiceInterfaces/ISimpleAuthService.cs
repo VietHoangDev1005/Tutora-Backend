@@ -9,7 +9,8 @@ namespace MV.ApplicationLayer.ServiceInterfaces
     public interface ISimpleAuthService
     {
         Task<TokenResponse> SimpleLoginAsync(SimpleLoginRequest request, string? platform = null);
-        Task<TokenResponse> SimpleRegisterAsync(SimpleRegisterRequest request);
+        /// <param name="ipAddress">IP của request đăng ký — lưu cùng bằng chứng đồng ý điều khoản.</param>
+        Task<TokenResponse> SimpleRegisterAsync(SimpleRegisterRequest request, string? ipAddress = null);
         Task<TokenResponse> VerifyPhoneOtpAsync(VerifyPhoneOtpRequest request, string? platform = null);
         Task<TokenResponse> ResendPhoneOtpAsync(ResendPhoneOtpRequest request);
         Task<TokenResponse> ForgotPasswordAsync(ForgotPasswordRequest request);

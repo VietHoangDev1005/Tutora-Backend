@@ -400,6 +400,11 @@ namespace MV.ApplicationLayer.Services
             var user = await _userRepository.GetUserByIdAsync(userId)
                 ?? throw new UserNotFoundException(userId);
 
+            // Người dùng đã tự xoá tài khoản: mở khoá ở đây sẽ "hồi sinh" một tài khoản chủ nhân
+            // đã yêu cầu xoá (và có thể đã bị ẩn danh) — không cho phép.
+            if (user.Isdeleted == true)
+                throw new InvalidOperationException("Tài khoản đã bị xoá, không thể mở khoá.");
+
             user.Status = 1;
             user.Isdeactivated = false;
             user.Deactivatedat = MV.DomainLayer.Helpers.TimeZoneHelper.UtcNow;

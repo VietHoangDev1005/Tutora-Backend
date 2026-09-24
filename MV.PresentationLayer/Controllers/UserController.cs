@@ -2,6 +2,7 @@ using MV.DomainLayer.Constants;
 using MV.DomainLayer.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using MV.ApplicationLayer.ServiceInterfaces;
 using MV.DomainLayer.DTO;
 using MV.DomainLayer.DTO.RequestModel;
@@ -226,6 +227,48 @@ namespace MV.PresentationLayer.Controllers
             {
                 var result = await _userService.ToggleDeactivationAsync(userId);
                 return Ok(APIResponse<DeactivationStatusResponse>.Success(result, result.Message));
+            }
+            catch (UserNotFoundException)
+            {
+                return NotFound(APIResponse<object>.Fail(ApiMessages.UserNotFound, 404));
+            }
+        }
+
+        /// <summary>
+        /// POST /api/users/me/delete-account — người dùng tự xoá tài khoản (app mobile, mọi role
+        /// trừ Admin/Staff). Xoá mềm ngay: status = 0, is_deleted = true, thu hồi mọi refresh token,
+        /// gỡ push token; dữ liệu cá nhân + file ghi âm được dọn sau 30 ngày (AccountDeletionPurgeJob).
+        /// Khác PUT me/deactivate (tạm khoá, mở lại được): không có đường mở lại.
+        /// </summary>
+        [HttpPost("me/delete-account")]
+        [Authorize]
+        [EnableRateLimiting("login")]
+        public async Task<IActionResult> DeleteMyAccount([FromBody] DeleteAccountRequest? request)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(APIResponse<object>.Fail(ApiMessages.Unauthorized, 401));
+
+            try
+            {
+                var result = await _userService.DeleteOwnAccountAsync(userId, request ?? new DeleteAccountRequest());
+                return Ok(APIResponse<DeleteAccountResponse>.Success(result, result.Message));
+            }
+            catch (AccountDeletionPasswordException ex)
+            {
+                return BadRequest(APIResponse<object>.Fail(ex.Message, 400));
+            }
+            catch (AccountDeletionForbiddenException ex)
+            {
+                return StatusCode(403, APIResponse<object>.Fail(ex.Message, 403));
+            }
+            catch (AccountDeletionBlockedException ex)
+            {
+                return Conflict(APIResponse<object>.Fail(ex.Message, 409, new { blockers = ex.Blockers }));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(APIResponse<object>.Fail(ex.Message, 400));
             }
             catch (UserNotFoundException)
             {

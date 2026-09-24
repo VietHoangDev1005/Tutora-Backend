@@ -204,7 +204,7 @@ namespace MV.ApplicationLayer.Services
             }
         }
 
-        public async Task<TokenResponse> SimpleRegisterAsync(SimpleRegisterRequest request)
+        public async Task<TokenResponse> SimpleRegisterAsync(SimpleRegisterRequest request, string? ipAddress = null)
         {
             try
             {
@@ -236,6 +236,16 @@ namespace MV.ApplicationLayer.Services
                 // mọi endpoint yêu cầu đúng role dù Primaryrole "về ý nghĩa" là đúng.
                 var requestedRole = NormalizeRole(rawRequestedRole) ?? rawRequestedRole;
 
+                // Đồng ý Điều khoản/Chính sách: web chưa gửi 2 cờ này nên KHÔNG bắt buộc chung.
+                // Riêng app gia sư (Source = "mobile", Role = Tutor) đã có checkbox → bắt buộc cả hai.
+                var acceptanceSource = NormalizeAcceptanceSource(request.Source);
+                if (string.Equals(requestedRole, UserRole.Tutor, StringComparison.OrdinalIgnoreCase)
+                    && acceptanceSource == PolicyAcceptanceSource.Mobile
+                    && (request.AcceptedTerms != true || request.AcceptedPrivacy != true))
+                {
+                    return new TokenResponse { ErrorMessage = "Bạn cần đồng ý Điều khoản sử dụng và Chính sách quyền riêng tư." };
+                }
+
                 var phone = request.Phone.Trim();
 
                 // Email tùy chọn — nếu có thì kiểm tra trùng.
@@ -249,6 +259,15 @@ namespace MV.ApplicationLayer.Services
                 }
 
                 var existingUserByPhone = await _userRepository.GetUserByPhoneAsync(phone);
+
+                // Tài khoản tự xoá vẫn giữ SĐT cho tới khi job dọn chạy (AccountDeletion.PurgeAfterDays).
+                if (existingUserByPhone != null && existingUserByPhone.Isdeleted == true)
+                {
+                    return new TokenResponse
+                    {
+                        ErrorMessage = $"Số điện thoại này thuộc một tài khoản đã bị xoá. Bạn có thể đăng ký lại sau khi dữ liệu được dọn (tối đa {AccountDeletion.PurgeAfterDays} ngày kể từ ngày xoá)."
+                    };
+                }
 
                 // SĐT đã tồn tại và đã xác thực → chặn.
                 if (existingUserByPhone != null && existingUserByPhone.Isphoneverified == true)
@@ -274,6 +293,8 @@ namespace MV.ApplicationLayer.Services
 
                     await _userRepository.UpdateUserAsync(existingUserByPhone);
                     await _dbContext.SaveChangesAsync();
+
+                    await RecordPolicyAcceptancesAsync(existingUserByPhone.Userid, request, acceptanceSource, ipAddress);
 
                     var blockReason = await GetOtpBlockReasonAsync(PhoneVerifyKey(phone));
                     if (blockReason != null)
@@ -348,6 +369,7 @@ namespace MV.ApplicationLayer.Services
                 await _userRepository.CreateUserAsync(newUser);
                 await _dbContext.SaveChangesAsync();
 
+                await RecordPolicyAcceptancesAsync(userId, request, acceptanceSource, ipAddress);
 
                 var otpCode = GenerateOtpCode();
                 await StoreOtpAsync(PhoneVerifyKey(phone), otpCode);
@@ -509,6 +531,11 @@ namespace MV.ApplicationLayer.Services
                     return new TokenResponse { ErrorMessage = "Số điện thoại chưa được đăng ký.", Phone = phone };
                 }
 
+                if (user.Isdeleted == true)
+                {
+                    return new TokenResponse { ErrorMessage = AccountDeletion.DeletedMessage, Phone = phone };
+                }
+
                 // Cooldown/giới hạn ngày vẫn check âm thầm (không phải yêu cầu thay đổi ở đây) —
                 // nếu đang bị chặn gửi OTP thì coi như thành công, không gửi lại OTP mới.
                 if (await GetOtpBlockReasonAsync(PhoneResetKey(phone)) == null)
@@ -584,6 +611,22 @@ namespace MV.ApplicationLayer.Services
 
         private async Task<TokenResponse> CreateTokenResponseAsync(User user, string? platform)
         {
+            // Chốt chặn chung cho mọi đường phát token (đăng nhập, verify-phone...): tài khoản đã
+            // tự xoá hoặc bị khoá (status = 0) không bao giờ nhận token mới.
+            if (user.Isdeleted == true)
+            {
+                return new TokenResponse { ErrorMessage = AccountDeletion.DeletedMessage };
+            }
+
+            if (user.Status == 0)
+            {
+                return new TokenResponse
+                {
+                    ErrorMessage = await MV.ApplicationLayer.Helpers.AccountLockoutMessage
+                        .BuildAsync(_dbContext, user.Userid)
+                };
+            }
+
             // Chốt chặn cuối trước khi phát token — miễn cho tài khoản nội bộ
             // (Staff/Admin, xác thực bằng email + mật khẩu, không qua OTP) và cho
             // tài khoản con do phụ huynh tạo (xem gate tương ứng ở SimpleLoginAsync).
@@ -663,6 +706,88 @@ namespace MV.ApplicationLayer.Services
 
         private static string GenerateOtpCode()
             => RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+
+        /// <summary>"mobile" (không phân biệt hoa/thường) → mobile; mọi giá trị khác / trống → web.</summary>
+        private static string NormalizeAcceptanceSource(string? source)
+            => string.Equals(source?.Trim(), PolicyAcceptanceSource.Mobile, StringComparison.OrdinalIgnoreCase)
+                ? PolicyAcceptanceSource.Mobile
+                : PolicyAcceptanceSource.Web;
+
+        private const string PolicyStatusPublished = "published";
+
+        /// <summary>
+        /// Ghi bằng chứng đồng ý Điều khoản / Chính sách theo phiên bản ĐANG xuất bản của
+        /// policy_documents. Không có bản published → lưu "unpublished" + cảnh báo log.
+        /// Lỗi ở đây KHÔNG làm hỏng đăng ký (tài khoản đã được lưu ở bước trước).
+        /// </summary>
+        private async Task RecordPolicyAcceptancesAsync(
+            string userId, SimpleRegisterRequest request, string source, string? ipAddress)
+        {
+            var slugs = new List<string>();
+            if (request.AcceptedTerms == true) slugs.Add(PolicySlugs.Terms);
+            if (request.AcceptedPrivacy == true)
+                slugs.Add(source == PolicyAcceptanceSource.Mobile ? PolicySlugs.PrivacyApp : PolicySlugs.Privacy);
+            if (slugs.Count == 0) return;
+
+            var added = new List<UserPolicyAcceptance>();
+            try
+            {
+                var published = await _dbContext.PolicyDocuments
+                    .AsNoTracking()
+                    .Where(p => slugs.Contains(p.Slug) && p.Status == PolicyStatusPublished)
+                    .Select(p => new { p.Slug, p.Version })
+                    .ToListAsync();
+
+                // Luồng "SĐT chưa xác thực → đăng ký lại" có thể đã ghi đồng ý lần trước.
+                var existing = await _dbContext.UserPolicyAcceptances
+                    .AsNoTracking()
+                    .Where(a => a.Userid == userId && slugs.Contains(a.Policyslug))
+                    .Select(a => new { a.Policyslug, a.Policyversion })
+                    .ToListAsync();
+
+                var ip = string.IsNullOrWhiteSpace(ipAddress)
+                    ? null
+                    : (ipAddress.Length > 64 ? ipAddress[..64] : ipAddress);
+                var now = MV.DomainLayer.Helpers.TimeZoneHelper.UtcNow;
+
+                foreach (var slug in slugs)
+                {
+                    var version = published.FirstOrDefault(p => p.Slug == slug)?.Version;
+                    if (string.IsNullOrWhiteSpace(version))
+                    {
+                        _logger.LogWarning(
+                            "Không có bản published của văn bản {Slug} — lưu đồng ý của {UserId} với phiên bản '{Version}'.",
+                            slug, userId, PolicySlugs.UnpublishedVersion);
+                        version = PolicySlugs.UnpublishedVersion;
+                    }
+
+                    if (existing.Any(e => e.Policyslug == slug && e.Policyversion == version))
+                        continue;
+
+                    var row = new UserPolicyAcceptance
+                    {
+                        Userid = userId,
+                        Policyslug = slug,
+                        Policyversion = version,
+                        Acceptedat = now,
+                        Source = source,
+                        Ipaddress = ip
+                    };
+                    _dbContext.UserPolicyAcceptances.Add(row);
+                    added.Add(row);
+                }
+
+                if (added.Count > 0)
+                    await _dbContext.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Không lưu được bằng chứng đồng ý điều khoản cho {UserId}.", userId);
+                // Bỏ các dòng hỏng khỏi change tracker để lần SaveChanges sau trong request không lặp lỗi.
+                foreach (var row in added)
+                    _dbContext.UserPolicyAcceptances.Remove(row);
+            }
+        }
 
         private static string? NormalizeRole(string? role)
         {

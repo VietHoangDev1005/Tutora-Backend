@@ -337,6 +337,10 @@ namespace MV.ApplicationLayer.Services
             var user = await _userRepository.GetUserByIdAsync(userId)
                 ?? throw new UserNotFoundException();
 
+            // Tài khoản đã tự xoá cũng có Isdeactivated = true — toggle ở đây KHÔNG được mở lại.
+            if (user.Isdeleted == true)
+                throw new InvalidOperationException(AccountDeletion.DeletedMessage);
+
             var now = TimeZoneHelper.UtcNow;
             var willDeactivate = !(user.Isdeactivated ?? false);
 

@@ -30,10 +30,13 @@ public static class RecorderDeliveryChannel
     public const string Zns = "zns";
 }
 
-/// <summary>Hạn lưu trữ file âm thanh gốc. Báo cáo + lời thoại giữ lâu dài.</summary>
+/// <summary>
+/// Hạn lưu trữ file âm thanh gốc (180 ngày ≈ 6 tháng, phục vụ đối chiếu khiếu nại — chỉ admin
+/// Tutora nghe được, gia sư không). Transcript giữ theo GoogleGemini:TranscriptRetentionDays (730).
+/// </summary>
 public static class RecorderRetention
 {
-    public const int AudioDays = 30;
+    public const int AudioDays = 180;
 }
 
 public static class RecorderDeliveryStatus
@@ -49,6 +52,22 @@ public static class RecorderConsentAction
     public const string Linked = "linked";
     public const string Unlinked = "unlinked";
     public const string Declined = "declined";
+
+    /// <summary>Gia sư xác nhận phụ huynh đồng ý nội dung ghi âm (kèm consent_version).</summary>
+    public const string Granted = "granted";
+
+    /// <summary>Gia sư bỏ xác nhận đồng ý.</summary>
+    public const string Withdrawn = "withdrawn";
+}
+
+/// <summary>Nội dung đồng ý ghi âm mà gia sư đưa phụ huynh đọc trong app.</summary>
+public static class RecorderConsentText
+{
+    /// <summary>Phiên bản hiện hành — app gửi kèm khi gia sư tick xác nhận.</summary>
+    public const string CurrentVersion = "v1";
+
+    /// <summary>Xác nhận từ bản app cũ (chưa hiện nội dung đồng ý) — không có phiên bản.</summary>
+    public const string LegacyVersion = "v0";
 }
 
 /// <summary>Cách phụ huynh xác nhận.</summary>

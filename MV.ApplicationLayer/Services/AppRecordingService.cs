@@ -31,6 +31,9 @@ public class AppRecordingService(
     /// </summary>
     private static readonly TimeSpan UploadUrlLifetime = TimeSpan.FromMinutes(30);
 
+    /// <summary>Link nghe cho admin: đủ để mở nghe một lần, ngắn để link rò ra không dùng lâu được.</summary>
+    private static readonly TimeSpan AdminAudioUrlLifetime = TimeSpan.FromMinutes(10);
+
     // ── Bắt đầu ghi ──────────────────────────────────────────────────────────
 
     public async Task<AppRecordingStartResponse> StartForClassSessionAsync(
@@ -91,6 +94,15 @@ public class AppRecordingService(
 
         if (student.Consentstatus == RecorderConsentStatus.Declined)
             throw new RecorderNotReadyException("Phụ huynh đã từ chối ghi âm cho học sinh này.");
+        // Google Play + Luật BVDLCN: không ghi âm trẻ em khi chưa có xác nhận phụ huynh đồng ý.
+        if (student.Consentstatus != RecorderConsentStatus.TutorConfirmed
+            && student.Consentstatus != RecorderConsentStatus.ParentConfirmed)
+            throw new RecorderNotReadyException(
+                "Chưa có xác nhận phụ huynh đồng ý ghi âm. Mở hồ sơ học sinh, cho phụ huynh đọc nội dung đồng ý và tick xác nhận.");
+        if (student.Consentstatus == RecorderConsentStatus.TutorConfirmed
+            && student.Consentversion != RecorderConsentText.CurrentVersion)
+            throw new RecorderNotReadyException(
+                $"Nội dung đồng ý ghi âm đã cập nhật ({RecorderConsentText.CurrentVersion}). Cho phụ huynh đọc lại và xác nhận trong hồ sơ học sinh.");
 
         // Bấm ghi lần nữa sau khi app bị giết: nối tiếp buổi đang ghi dở trong
         // hôm nay thay vì mở buổi mới.
@@ -285,17 +297,25 @@ public class AppRecordingService(
         // một lần bấm nhầm là mất sạch.
     }
 
-    public async Task<AppRecordingAudioUrlResponse> GetAudioUrlAsync(
-        Guid recordingId, string tutorUserId, CancellationToken ct = default)
+    /// <summary>
+    /// Link presigned ngắn hạn tới file đã ghép — CHỈ dành cho admin Tutora (gia sư không được
+    /// nghe lại bản ghi). Không kiểm tra chủ sở hữu; controller gọi hàm này phải giới hạn role
+    /// Admin và ghi log truy cập.
+    /// </summary>
+    public async Task<AppRecordingAudioUrlResponse> GetAudioUrlForAdminAsync(
+        Guid lessonId, CancellationToken ct = default)
     {
-        var lesson = await LoadOwnedAsync(recordingId, tutorUserId, ct);
+        EnsureStorage();
+        var lesson = await db.RecorderLessons.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Lessonid == lessonId, ct)
+            ?? throw new RecorderNotFoundException("Không tìm thấy bản ghi.");
         if (lesson.Audiodeletedat != null)
             throw new RecorderNotReadyException(
-                $"File âm thanh đã được xoá sau {RecorderRetention.AudioDays} ngày lưu trữ. Báo cáo và lời thoại vẫn còn.");
+                $"File âm thanh đã bị xoá (hết hạn lưu trữ {RecorderRetention.AudioDays} ngày hoặc tài khoản gia sư đã bị xoá).");
         if (string.IsNullOrWhiteSpace(lesson.Audiokey))
-            throw new RecorderNotReadyException("File nghe lại chưa sẵn sàng, thử lại sau ít phút.");
+            throw new RecorderNotReadyException("File nghe lại chưa sẵn sàng (chưa ghép xong hoặc bản ghi lỗi).");
 
-        var lifetime = TimeSpan.FromHours(2);
+        var lifetime = AdminAudioUrlLifetime;
         return new AppRecordingAudioUrlResponse
         {
             Url = storage.CreateDownloadUrl(lesson.Audiokey!, lifetime),

@@ -9,6 +9,8 @@ public class RecorderStudentResponse
     public string? ParentName { get; set; }
     public string? ParentPhone { get; set; }
     public string ConsentStatus { get; set; } = string.Empty;
+    public string? ConsentVersion { get; set; }
+    public DateTime? ConsentAt { get; set; }
     public string? Note { get; set; }
     public List<MV.DomainLayer.DTO.RequestModel.RecorderScheduleSlot> Schedule { get; set; } = new();
     public DateOnly? ScheduleFrom { get; set; }

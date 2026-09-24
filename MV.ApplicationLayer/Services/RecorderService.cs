@@ -69,9 +69,10 @@ public class RecorderService(IAppDbContext db) : IRecorderService
             Createdat = now,
             Updatedat = now
         };
-        Apply(s, request, now);
+        var consentChange = Apply(s, request, now);
         db.RecorderStudents.Add(s);
         await db.SaveChangesAsync(ct);
+        await LogConsentChangeAsync(s, consentChange, now, ct);
         if (request.Schedule != null)
             await ReplaceScheduleAsync(s, request.Schedule, request.ScheduleFrom, request.ScheduleUntil, ct);
         return ToResponse(s, 0, null);
@@ -80,8 +81,10 @@ public class RecorderService(IAppDbContext db) : IRecorderService
     public async Task<RecorderStudentResponse> UpdateStudentAsync(Guid studentId, string tutorId, RecorderStudentRequest request, CancellationToken ct = default)
     {
         var s = await LoadStudentAsync(studentId, tutorId, ct);
-        Apply(s, request, TimeZoneHelper.UtcNow);
+        var now = TimeZoneHelper.UtcNow;
+        var consentChange = Apply(s, request, now);
         await db.SaveChangesAsync(ct);
+        await LogConsentChangeAsync(s, consentChange, now, ct);
         if (request.Schedule != null)
             await ReplaceScheduleAsync(s, request.Schedule, request.ScheduleFrom, request.ScheduleUntil, ct);
         return await GetStudentAsync(studentId, tutorId, ct);
@@ -316,7 +319,27 @@ public class RecorderService(IAppDbContext db) : IRecorderService
             s => s.Studentid == studentId && s.Tutorid == tutorId && s.Archivedat == null, ct)
         ?? throw new RecorderNotFoundException("Không tìm thấy học sinh.");
 
-    private static void Apply(RecorderStudent s, RecorderStudentRequest r, DateTime now)
+    /// <summary>
+    /// Ghi nhật ký đồng ý (recorder.consent_events) — bằng chứng gia sư xác nhận phụ huynh
+    /// đã đồng ý nội dung ghi âm phiên bản nào, lúc nào. Lưu sau khi học sinh đã có trong DB (FK).
+    /// </summary>
+    private async Task LogConsentChangeAsync(RecorderStudent s, string? action, DateTime now, CancellationToken ct)
+    {
+        if (action == null) return;
+        db.RecorderConsentEvents.Add(new RecorderConsentEvent
+        {
+            Eventid = Guid.NewGuid(),
+            Studentid = s.Studentid,
+            Action = action,
+            Method = RecorderConsentMethod.Tutor,
+            Consentversion = s.Consentversion,
+            Createdat = now
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <returns>Hành động đồng ý cần ghi nhật ký (granted/withdrawn) hoặc null nếu không đổi.</returns>
+    private static string? Apply(RecorderStudent s, RecorderStudentRequest r, DateTime now)
     {
         s.Fullname = r.FullName.Trim();
         s.Grade = r.Grade;
@@ -328,16 +351,29 @@ public class RecorderService(IAppDbContext db) : IRecorderService
 
         // Gia sư chỉ nâng được lên tutor_confirmed; không hạ parent_confirmed/declined
         // (hai trạng thái đó do phụ huynh tự quyết qua ZNS).
+        var version = string.IsNullOrWhiteSpace(r.ConsentVersion) ? RecorderConsentText.LegacyVersion : r.ConsentVersion.Trim();
         if (r.ParentConsent && s.Consentstatus == RecorderConsentStatus.Unknown)
         {
             s.Consentstatus = RecorderConsentStatus.TutorConfirmed;
             s.Consentat = now;
+            s.Consentversion = version;
+            return RecorderConsentAction.Granted;
         }
-        else if (!r.ParentConsent && s.Consentstatus == RecorderConsentStatus.TutorConfirmed)
+        if (r.ParentConsent && s.Consentstatus == RecorderConsentStatus.TutorConfirmed
+            && !string.Equals(s.Consentversion, version, StringComparison.Ordinal))
+        {
+            // Phụ huynh đồng ý lại theo nội dung phiên bản mới.
+            s.Consentat = now;
+            s.Consentversion = version;
+            return RecorderConsentAction.Granted;
+        }
+        if (!r.ParentConsent && s.Consentstatus == RecorderConsentStatus.TutorConfirmed)
         {
             s.Consentstatus = RecorderConsentStatus.Unknown;
             s.Consentat = null;
+            return RecorderConsentAction.Withdrawn;
         }
+        return null;
     }
 
     private static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
@@ -387,6 +423,8 @@ public class RecorderService(IAppDbContext db) : IRecorderService
         ParentName = s.Parentname,
         ParentPhone = s.Parentphone,
         ConsentStatus = s.Consentstatus,
+        ConsentVersion = s.Consentversion,
+        ConsentAt = s.Consentat,
         Note = s.Note,
         Schedule = ParseSchedule(s.Schedule),
         ScheduleFrom = s.Schedulefrom,

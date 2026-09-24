@@ -39,5 +39,20 @@ namespace MV.DomainLayer.DTO.RequestModel
         /// SĐT phụ huynh để nhận ZNS theo dõi.
         /// </summary>
         public string? ParentPhone { get; set; }
+
+        /// <summary>
+        /// Người dùng đã tick đồng ý Điều khoản sử dụng (policy_documents slug "terms").
+        /// Tuỳ chọn — web chưa gửi. Bắt buộc true khi Role = Tutor và Source = "mobile".
+        /// </summary>
+        public bool? AcceptedTerms { get; set; }
+
+        /// <summary>
+        /// Người dùng đã tick đồng ý Chính sách quyền riêng tư (policy_documents slug "privacy").
+        /// Tuỳ chọn — web chưa gửi. Bắt buộc true khi Role = Tutor và Source = "mobile".
+        /// </summary>
+        public bool? AcceptedPrivacy { get; set; }
+
+        /// <summary>Nơi đăng ký: "mobile" | "web" (mặc định "web").</summary>
+        public string? Source { get; set; }
     }
 }

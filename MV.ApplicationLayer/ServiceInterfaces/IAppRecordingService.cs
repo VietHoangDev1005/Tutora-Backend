@@ -32,8 +32,11 @@ public interface IAppRecordingService
 
     Task DiscardAsync(Guid recordingId, string tutorUserId, CancellationToken ct = default);
 
-    /// <summary>Link presigned để nghe lại file đã ghép. Hết hạn lưu trữ thì báo lỗi.</summary>
-    Task<AppRecordingAudioUrlResponse> GetAudioUrlAsync(Guid recordingId, string tutorUserId, CancellationToken ct = default);
+    /// <summary>
+    /// Link presigned ngắn hạn (10 phút) để ADMIN nghe file đã ghép. Gia sư không được nghe lại bản
+    /// ghi — không có endpoint nào cho gia sư gọi hàm này. Hết hạn lưu trữ thì báo lỗi.
+    /// </summary>
+    Task<AppRecordingAudioUrlResponse> GetAudioUrlForAdminAsync(Guid lessonId, CancellationToken ct = default);
 
     /// <summary>Gia sư duyệt báo cáo đã sửa → gửi phụ huynh.</summary>
     Task<AppRecordingStatusResponse> ApproveAsync(

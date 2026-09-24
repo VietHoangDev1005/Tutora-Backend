@@ -570,6 +570,7 @@ builder.Services.AddHostedService<PaymentTimeoutJob>();
 builder.Services.AddHostedService<RecorderAudioRetentionJob>();
 builder.Services.AddHostedService<RecorderReportDeliveryJob>();
 builder.Services.AddHostedService<RecorderTranscriptBatchJob>();
+builder.Services.AddHostedService<AccountDeletionPurgeJob>();
 builder.Services.AddHostedService<PaymentRequestReconciliationJob>();
 builder.Services.AddHostedService<TutorResponseTimeoutJob>();
 builder.Services.AddHostedService<AutoConfirmClassSessionJob>();
@@ -654,6 +655,11 @@ builder.Services.AddAuthentication(options =>
             {
                 var userRepository = context.HttpContext.RequestServices.GetRequiredService<MV.ApplicationLayer.RepositoryInterfaces.IUserRepository>();
                 var user = await userRepository.GetUserByIdAsync(userId);
+                if (user?.Isdeleted == true)
+                {
+                    context.Fail(MV.DomainLayer.Constants.AccountDeletion.DeletedMessage);
+                    return;
+                }
                 if (user == null || user.Status == 0)
                 {
                     context.Fail("Tài khoản đã bị khóa hoặc bị xóa.");

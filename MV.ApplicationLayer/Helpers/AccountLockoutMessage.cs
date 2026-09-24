@@ -23,6 +23,12 @@ public static class AccountLockoutMessage
         string userId,
         CancellationToken ct = default)
     {
+        // Tài khoản tự xoá cũng mang status = 0 — nói thẳng là đã xoá, không phải bị khoá.
+        var isDeleted = await db.Users
+            .AsNoTracking()
+            .AnyAsync(u => u.Userid == userId && u.Isdeleted == true, ct);
+        if (isDeleted) return AccountDeletion.DeletedMessage;
+
         var suspension = await db.Profilesuspensions
             .AsNoTracking()
             .Where(s => s.Userid == userId && s.Isactive == true)

@@ -441,6 +441,10 @@ public class SocialRegistrationService : ISocialRegistrationService
 
     private async Task<TokenResponse> CreateTokenResponseAsync(User user)
     {
+        // Tài khoản đã tự xoá không nhận token qua bất kỳ đường social nào (liên kết lại SĐT...).
+        if (user.Isdeleted == true)
+            return new TokenResponse { ErrorMessage = AccountDeletion.DeletedMessage };
+
         if (string.IsNullOrWhiteSpace(user.Phone) || user.Isphoneverified != true)
         {
             return new TokenResponse

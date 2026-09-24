@@ -171,6 +171,8 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
 
     public virtual DbSet<PolicyDocument> PolicyDocuments { get; set; }
 
+    public virtual DbSet<UserPolicyAcceptance> UserPolicyAcceptances { get; set; }
+
     public virtual DbSet<Systemconfig> Systemconfigs { get; set; }
 
     public virtual DbSet<CommissionConfigHistory> CommissionConfigHistories { get; set; }
@@ -2059,6 +2061,7 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
             entity.Property(e => e.Parentphone).HasMaxLength(20).HasColumnName("parent_phone");
             entity.Property(e => e.Consentstatus).HasMaxLength(20).HasColumnName("consent_status");
             entity.Property(e => e.Consentat).HasColumnType("timestamp without time zone").HasColumnName("consent_at");
+            entity.Property(e => e.Consentversion).HasMaxLength(30).HasColumnName("consent_version");
             entity.Property(e => e.Note).HasColumnName("note");
             entity.Property(e => e.Schedule).HasColumnType("jsonb").HasColumnName("schedule");
             entity.Property(e => e.Schedulefrom).HasColumnName("schedule_from");
@@ -2469,6 +2472,30 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
             entity.HasOne(d => d.MaxGradeLevel).WithMany()
                 .HasForeignKey(d => d.MaxGradeLevelId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserPolicyAcceptance>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("user_policy_acceptances_pkey");
+
+            entity.ToTable("user_policy_acceptances");
+
+            entity.HasIndex(e => e.Userid, "idx_user_policy_acceptances_user");
+            entity.HasIndex(e => new { e.Userid, e.Policyslug, e.Policyversion }, "uq_user_policy_acceptances_user_slug_version").IsUnique();
+
+            entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
+            entity.Property(e => e.Userid).HasMaxLength(50).HasColumnName("user_id");
+            entity.Property(e => e.Policyslug).HasMaxLength(80).HasColumnName("policy_slug");
+            entity.Property(e => e.Policyversion).HasMaxLength(20).HasColumnName("policy_version");
+            entity.Property(e => e.Acceptedat).HasColumnType("timestamp without time zone").HasColumnName("accepted_at");
+            entity.Property(e => e.Source).HasMaxLength(20).HasColumnName("source");
+            entity.Property(e => e.Ipaddress).HasMaxLength(64).HasColumnName("ip_address");
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(e => e.Userid)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("user_policy_acceptances_user_fkey");
         });
 
         modelBuilder.Entity<PolicyDocument>(entity =>
@@ -3591,6 +3618,15 @@ entity.HasOne(d => d.Tutor).WithOne(p => p.Tutorprofile)
             entity.Property(e => e.Deletedat)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("deleted_at");
+            entity.Property(e => e.Deletionsource)
+                .HasMaxLength(20)
+                .HasColumnName("deletion_source");
+            entity.Property(e => e.Deletionreason)
+                .HasMaxLength(500)
+                .HasColumnName("deletion_reason");
+            entity.Property(e => e.Purgedat)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("purged_at");
             entity.Property(e => e.AiCreditsBalance)
                 .HasDefaultValue(0)
                 .HasColumnName("ai_credits_balance");

@@ -51,7 +51,8 @@ namespace MV.PresentationLayer.Controllers
         [EnableRateLimiting("otp")]
         public async Task<IActionResult> Register([FromBody] SimpleRegisterRequest request)
         {
-            var result = await _simpleAuthService.SimpleRegisterAsync(request);
+            var result = await _simpleAuthService.SimpleRegisterAsync(
+                request, HttpContext.Connection.RemoteIpAddress?.ToString());
 
             if (!string.IsNullOrEmpty(result.ErrorMessage))
             {
