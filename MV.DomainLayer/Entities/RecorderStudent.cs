@@ -18,6 +18,7 @@ public class RecorderStudent
     /// <summary>Xem <see cref="Constants.RecorderConsentStatus"/>.</summary>
     public string Consentstatus { get; set; } = null!;
     public DateTime? Consentat { get; set; }
+    public string? Consentversion { get; set; }
     public string? Note { get; set; }
 
     /// <summary>Thời khoá biểu hằng tuần (jsonb) — xem RecorderScheduleSlot.</summary>

@@ -110,6 +110,10 @@ namespace MV.ApplicationLayer.Services
 
                 // 6. Kiểm tra user còn active không
                 var user = await _userRepository.GetUserByIdAsync(userId);
+                if (user?.Isdeleted == true)
+                {
+                    return new TokenResponse { ErrorMessage = AccountDeletion.DeletedMessage };
+                }
                 if (user == null || user.Status == 0)
                 {
                     return new TokenResponse { ErrorMessage = "Tài khoản không tồn tại hoặc đã bị khóa." };

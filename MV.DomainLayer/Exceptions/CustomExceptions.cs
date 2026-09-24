@@ -21,6 +21,12 @@ namespace MV.DomainLayer.Exceptions
         public UserNotFoundException() : base(ApiMessages.UserNotFoundWithPeriod) { }
     }
 
+    public class TutorUnderageException : BadRequestException
+    {
+        public TutorUnderageException()
+            : base($"Gia sư phải từ {MV.DomainLayer.Helpers.AgeHelper.MinTutorAge} tuổi trở lên.") { }
+    }
+
     // Email Exceptions
     public class EmailAlreadyExistsException : BadRequestException
     {

@@ -2,8 +2,10 @@ using System.Text.Json;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MV.ApplicationLayer.Interfaces;
 using MV.ApplicationLayer.ServiceInterfaces;
+using MV.DomainLayer.Configuration;
 using MV.DomainLayer.Constants;
 using MV.DomainLayer.DTO.RequestModel;
 using MV.DomainLayer.DTO.ResponseModel;
@@ -23,6 +25,7 @@ public class AppRecordingService(
     IAppRecordingStorage storage,
     IClassSessionService classSessionService,
     IBackgroundJobClient backgroundJobClient,
+    IOptions<AppReviewSettings> appReview,
     ILogger<AppRecordingService> logger) : IAppRecordingService
 {
     /// <summary>
@@ -30,6 +33,9 @@ public class AppRecordingService(
     /// URL rò ra ngoài không dùng được lâu.
     /// </summary>
     private static readonly TimeSpan UploadUrlLifetime = TimeSpan.FromMinutes(30);
+
+    /// <summary>Link nghe cho admin: đủ để mở nghe một lần, ngắn để link rò ra không dùng lâu được.</summary>
+    private static readonly TimeSpan AdminAudioUrlLifetime = TimeSpan.FromMinutes(10);
 
     // ── Bắt đầu ghi ──────────────────────────────────────────────────────────
 
@@ -78,6 +84,12 @@ public class AppRecordingService(
     {
         EnsureStorage();
         var lesson = await LoadOwnedAsync(lessonId, tutorUserId, ct);
+        if (lesson.Studentid is Guid sid)
+        {
+            var student = await db.RecorderStudents.FirstOrDefaultAsync(s => s.Studentid == sid, ct)
+                ?? throw new RecorderNotFoundException("Không tìm thấy học sinh.");
+            EnsureConsent(student);
+        }
         return await OpenRecordingAsync(lesson, await StudentNameAsync(lesson, ct), consentSnapshotJson, ct);
     }
 
@@ -88,9 +100,7 @@ public class AppRecordingService(
         var student = await db.RecorderStudents
             .FirstOrDefaultAsync(s => s.Studentid == studentId && s.Tutorid == tutorUserId && s.Archivedat == null, ct)
             ?? throw new RecorderNotFoundException("Không tìm thấy học sinh.");
-
-        if (student.Consentstatus == RecorderConsentStatus.Declined)
-            throw new RecorderNotReadyException("Phụ huynh đã từ chối ghi âm cho học sinh này.");
+        EnsureConsent(student);
 
         // Bấm ghi lần nữa sau khi app bị giết: nối tiếp buổi đang ghi dở trong
         // hôm nay thay vì mở buổi mới.
@@ -102,13 +112,14 @@ public class AppRecordingService(
             .OrderByDescending(l => l.Startedat)
             .FirstOrDefaultAsync(ct);
 
-        // Có buổi theo thời khoá biểu quanh giờ này (±3 giờ) thì ghi vào đúng buổi đó,
+        // Có buổi theo thời khoá biểu quanh giờ này (bắt đầu từ 3 giờ trước tới 1 giờ
+        // tới) thì ghi vào đúng buổi đó,
         // để lịch và báo cáo khớp nhau thay vì mọc thêm một buổi lẻ.
         if (lesson == null)
         {
             var now = TimeZoneHelper.UtcNow;
             var windowStart = now.AddHours(-3);
-            var windowEnd = now.AddHours(3);
+            var windowEnd = now.AddHours(1);
             lesson = (await db.RecorderLessons
                     .Where(l => l.Studentid == studentId
                         && l.Status == SessionRecordingStatus.Scheduled
@@ -277,25 +288,52 @@ public class AppRecordingService(
         if (lesson.Status == SessionRecordingStatus.Sent)
             throw new AppRecordingAlreadySentException();
 
-        lesson.Status = SessionRecordingStatus.Discarded;
-        lesson.Endedat ??= TimeZoneHelper.UtcNow;
+        if (lesson.Studentid != null && lesson.Scheduledend != null)
+        {
+            // Buổi sinh từ thời khoá biểu (có giờ kết thúc): huỷ bản ghi thì trả buổi về
+            // "đã lên lịch" để vẫn hiện trong lịch và ghi lại được — không xoá mất buổi học.
+            lesson.Status = SessionRecordingStatus.Scheduled;
+            lesson.Startedat = null;
+            lesson.Endedat = null;
+            lesson.Durationsec = 0;
+            lesson.Bytes = 0;
+            lesson.Partcount = 0;
+            lesson.Aistatus = RecorderAiStatus.None;
+            lesson.Airesult = null;
+            lesson.Aierror = null;
+            lesson.Audiokey = null;
+            lesson.Errormessage = null;
+        }
+        else
+        {
+            lesson.Status = SessionRecordingStatus.Discarded;
+            lesson.Endedat ??= TimeZoneHelper.UtcNow;
+        }
         lesson.Updatedat = TimeZoneHelper.UtcNow;
         await db.SaveChangesAsync(ct);
         // File trên kho để lifecycle rule của bucket tự dọn: xoá ngay ở đây thì
         // một lần bấm nhầm là mất sạch.
     }
 
-    public async Task<AppRecordingAudioUrlResponse> GetAudioUrlAsync(
-        Guid recordingId, string tutorUserId, CancellationToken ct = default)
+    /// <summary>
+    /// Link presigned ngắn hạn tới file đã ghép — CHỈ dành cho admin Tutora (gia sư không được
+    /// nghe lại bản ghi). Không kiểm tra chủ sở hữu; controller gọi hàm này phải giới hạn role
+    /// Admin và ghi log truy cập.
+    /// </summary>
+    public async Task<AppRecordingAudioUrlResponse> GetAudioUrlForAdminAsync(
+        Guid lessonId, CancellationToken ct = default)
     {
-        var lesson = await LoadOwnedAsync(recordingId, tutorUserId, ct);
+        EnsureStorage();
+        var lesson = await db.RecorderLessons.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Lessonid == lessonId, ct)
+            ?? throw new RecorderNotFoundException("Không tìm thấy bản ghi.");
         if (lesson.Audiodeletedat != null)
             throw new RecorderNotReadyException(
-                $"File âm thanh đã được xoá sau {RecorderRetention.AudioDays} ngày lưu trữ. Báo cáo và lời thoại vẫn còn.");
+                $"File âm thanh đã bị xoá (hết hạn lưu trữ {RecorderRetention.AudioDays} ngày hoặc tài khoản gia sư đã bị xoá).");
         if (string.IsNullOrWhiteSpace(lesson.Audiokey))
-            throw new RecorderNotReadyException("File nghe lại chưa sẵn sàng, thử lại sau ít phút.");
+            throw new RecorderNotReadyException("File nghe lại chưa sẵn sàng (chưa ghép xong hoặc bản ghi lỗi).");
 
-        var lifetime = TimeSpan.FromHours(2);
+        var lifetime = AdminAudioUrlLifetime;
         return new AppRecordingAudioUrlResponse
         {
             Url = storage.CreateDownloadUrl(lesson.Audiokey!, lifetime),
@@ -319,6 +357,13 @@ public class AppRecordingService(
         lesson.Reportcontent = request.LessonContent.Trim();
         lesson.Reporthomework = string.IsNullOrWhiteSpace(request.Homework) ? null : request.Homework.Trim();
         lesson.Reportnotes = string.IsNullOrWhiteSpace(request.TutorNotes) ? null : request.TutorNotes.Trim();
+
+        // Tóm tắt ngắn cho tin Zalo: gia sư không gửi (app cũ / không sửa) thì lấy bản nháp AI.
+        var zaloDraft = ParseDraft(lesson.Airesult)?.ZaloSummary;
+        lesson.Zalocontent = ZaloValue(request.ZaloContent, zaloDraft?.Content);
+        lesson.Zalohomework = ZaloValue(request.ZaloHomework, zaloDraft?.Homework);
+        lesson.Zalonotes = ZaloValue(request.ZaloNotes, zaloDraft?.Notes);
+
         lesson.Approvedat = now;
         lesson.Updatedat = now;
 
@@ -336,6 +381,15 @@ public class AppRecordingService(
             lesson.Deliverystatus = RecorderDeliveryStatus.Sent;
             lesson.Sentat = now;
         }
+        else if (appReview.Value.IsDemoTutor(tutorUserId))
+        {
+            // Tài khoản demo cho người duyệt Google Play: đánh dấu đã gửi, KHÔNG gửi Zalo thật.
+            lesson.Deliverychannel = RecorderDeliveryChannel.Zns;
+            lesson.Deliverystatus = RecorderDeliveryStatus.Sent;
+            lesson.Sentat = now;
+            logger.LogInformation("Demo tutor {TutorId} duyệt báo cáo {LessonId} — bỏ qua gửi Zalo.",
+                tutorUserId, lesson.Lessonid);
+        }
         else
         {
             // Học sinh ngoài nền tảng: Tutora gửi ZNS tới SĐT phụ huynh. Template
@@ -349,7 +403,41 @@ public class AppRecordingService(
         return await BuildStatusAsync(lesson, ct);
     }
 
+    public async Task ReportAiFeedbackAsync(
+        Guid recordingId, string tutorUserId, RecorderAiFeedbackRequest request, CancellationToken ct = default)
+    {
+        var lesson = await LoadOwnedAsync(recordingId, tutorUserId, ct);
+        if (string.IsNullOrWhiteSpace(lesson.Airesult))
+            throw new RecorderNotReadyException("Buổi này chưa có nội dung AI để báo.");
+
+        db.RecorderAiFeedbacks.Add(new RecorderAiFeedback
+        {
+            Feedbackid = Guid.NewGuid(),
+            Lessonid = lesson.Lessonid,
+            Tutorid = tutorUserId,
+            Reason = request.Reason,
+            Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
+            Createdat = TimeZoneHelper.UtcNow
+        });
+        await db.SaveChangesAsync(ct);
+        logger.LogWarning("Gia sư {TutorId} báo nội dung AI sai ({Reason}) cho buổi {LessonId}.",
+            tutorUserId, request.Reason, lesson.Lessonid);
+    }
+
     // ── nội bộ ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Giá trị gia sư gửi lên thắng bản nháp AI — kể cả chuỗi rỗng (gia sư chủ ý xoá, tin Zalo sẽ ghi
+    /// "Không có"). Chỉ khi app không gửi trường này (null, app cũ) mới lấy bản nháp. Cột DB là
+    /// varchar(200) nên cắt cứng cho chắc.
+    /// </summary>
+    private static string? ZaloValue(string? edited, string? draft)
+    {
+        var value = edited is not null ? edited.Trim()
+            : !string.IsNullOrWhiteSpace(draft) ? draft.Trim()
+            : null;
+        return value is { Length: > 200 } ? value[..200] : value;
+    }
 
     private void EnsureStorage()
     {
@@ -369,6 +457,24 @@ public class AppRecordingService(
             Createdat = now,
             Updatedat = now
         };
+    }
+
+    /// <summary>
+    /// Google Play + Luật BVDLCN: không ghi âm trẻ em khi chưa có xác nhận phụ huynh đồng ý.
+    /// Áp cho mọi đường mở bản ghi của học sinh ngoài nền tảng (ghi ngay lẫn buổi đã lên lịch).
+    /// </summary>
+    private static void EnsureConsent(RecorderStudent student)
+    {
+        if (student.Consentstatus == RecorderConsentStatus.Declined)
+            throw new RecorderNotReadyException("Phụ huynh đã từ chối ghi âm cho học sinh này.");
+        if (student.Consentstatus != RecorderConsentStatus.TutorConfirmed
+            && student.Consentstatus != RecorderConsentStatus.ParentConfirmed)
+            throw new RecorderNotReadyException(
+                "Chưa có xác nhận phụ huynh đồng ý ghi âm. Mở hồ sơ học sinh, cho phụ huynh đọc nội dung đồng ý và tick xác nhận.");
+        if (student.Consentstatus == RecorderConsentStatus.TutorConfirmed
+            && student.Consentversion != RecorderConsentText.CurrentVersion)
+            throw new RecorderNotReadyException(
+                $"Nội dung đồng ý ghi âm đã cập nhật ({RecorderConsentText.CurrentVersion}). Cho phụ huynh đọc lại và xác nhận trong hồ sơ học sinh.");
     }
 
     private async Task<RecorderLesson> LoadOwnedAsync(Guid lessonId, string tutorUserId, CancellationToken ct)
@@ -422,6 +528,9 @@ public class AppRecordingService(
             LessonContent = l.Reportcontent ?? draft?.LessonContent,
             Homework = l.Reporthomework ?? draft?.Homework,
             TutorNotes = l.Reportnotes ?? draft?.TutorNotes,
+            ZaloContent = l.Zalocontent ?? draft?.ZaloSummary?.Content,
+            ZaloHomework = l.Zalohomework ?? draft?.ZaloSummary?.Homework,
+            ZaloNotes = l.Zalonotes ?? draft?.ZaloSummary?.Notes,
             ErrorMessage = l.Aierror ?? l.Errormessage,
             DeliveryChannel = l.Deliverychannel,
             DeliveryStatus = l.Deliverystatus,

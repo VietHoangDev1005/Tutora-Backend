@@ -82,12 +82,22 @@ public class AppRecordingController(IAppRecordingService service) : ControllerBa
         return Ok(APIResponse<object>.Success(result, "Lấy trạng thái bản ghi thành công."));
     }
 
-    /// <summary>GET /api/recording/app/{recordingId}/audio-url — link nghe lại (2 giờ).</summary>
+    /// <summary>
+    /// GET /api/recording/app/{recordingId}/audio-url — ĐÃ TẮT. Gia sư không được nghe lại bản ghi;
+    /// chỉ admin Tutora nghe qua GET /api/admin/recorder/lessons/{lessonId}/audio. Giữ route để
+    /// bản app cũ nhận thông báo rõ ràng (403) thay vì 404.
+    /// </summary>
     [HttpGet("{recordingId:guid}/audio-url")]
-    public async Task<IActionResult> AudioUrl(Guid recordingId, CancellationToken ct)
+    public IActionResult AudioUrl(Guid recordingId) =>
+        StatusCode(403, APIResponse<object>.Fail(
+            "Gia sư không thể nghe lại bản ghi âm. Bản ghi chỉ được Tutora dùng để tạo báo cáo và xử lý khiếu nại.", 403));
+
+    /// <summary>POST /api/recording/app/{recordingId}/ai-feedback — gia sư báo nội dung AI sai / không phù hợp.</summary>
+    [HttpPost("{recordingId:guid}/ai-feedback")]
+    public async Task<IActionResult> ReportAiFeedback(Guid recordingId, [FromBody] RecorderAiFeedbackRequest body, CancellationToken ct)
     {
-        var result = await service.GetAudioUrlAsync(recordingId, UserId, ct);
-        return Ok(APIResponse<object>.Success(result, "Đã cấp link nghe lại."));
+        await service.ReportAiFeedbackAsync(recordingId, UserId, body, ct);
+        return Ok(APIResponse<object>.Success(new { }, "Cảm ơn bạn đã báo. Tutora sẽ xem lại nội dung này."));
     }
 
     /// <summary>DELETE /api/recording/app/{recordingId} — gia sư bỏ bản ghi.</summary>

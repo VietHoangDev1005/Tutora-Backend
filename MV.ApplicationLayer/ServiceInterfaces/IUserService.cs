@@ -151,6 +151,13 @@ namespace MV.ApplicationLayer.ServiceInterfaces
         Task<DeactivationStatusResponse> ToggleDeactivationAsync(string userId);
 
         /// <summary>
+        /// Người dùng tự xoá tài khoản (xoá mềm ngay, dọn dữ liệu sau AccountDeletion.PurgeAfterDays ngày).
+        /// Ném AccountDeletionPasswordException (400), AccountDeletionForbiddenException (403),
+        /// AccountDeletionBlockedException (409), InvalidOperationException nếu đã xoá.
+        /// </summary>
+        Task<DeleteAccountResponse> DeleteOwnAccountAsync(string userId, DeleteAccountRequest request);
+
+        /// <summary>
         /// Admin only: lấy signed URL có thời hạn 15 phút để xem ảnh CCCD của người dùng (Tutor/Student).
         /// URL lưu trong DB là private — không thể truy cập trực tiếp.
         /// </summary>

@@ -203,7 +203,7 @@ namespace MV.ApplicationLayer.Services
                 string.Equals(request.Role, UserRole.Tutor, StringComparison.OrdinalIgnoreCase) ? UserRole.Tutor :
                 throw new InvalidOperationException("Vai trò không hợp lệ. Chỉ được tạo tài khoản Student, Parent hoặc Tutor.");
 
-            var phone = request.Phone.Trim();
+            var phone = PhoneNumberHelper.ToE164(request.Phone)!;
             if (!await _userRepository.IsPhoneUniqueAsync(phone))
                 throw new PhoneAlreadyExistsException();
 
@@ -274,7 +274,7 @@ namespace MV.ApplicationLayer.Services
 
             if (request.Fullname != null) user.Fullname = request.Fullname;
             if (request.Email != null) user.Email = request.Email;
-            if (request.Phone != null) user.Phone = request.Phone;
+            if (request.Phone != null) user.Phone = PhoneNumberHelper.ToE164(request.Phone);
 
 
             if (request.Address != null) user.Address = request.Address;
@@ -399,6 +399,11 @@ namespace MV.ApplicationLayer.Services
         {
             var user = await _userRepository.GetUserByIdAsync(userId)
                 ?? throw new UserNotFoundException(userId);
+
+            // Người dùng đã tự xoá tài khoản: mở khoá ở đây sẽ "hồi sinh" một tài khoản chủ nhân
+            // đã yêu cầu xoá (và có thể đã bị ẩn danh) — không cho phép.
+            if (user.Isdeleted == true)
+                throw new InvalidOperationException("Tài khoản đã bị xoá, không thể mở khoá.");
 
             user.Status = 1;
             user.Isdeactivated = false;

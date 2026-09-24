@@ -58,6 +58,7 @@ builder.Services.Configure<AgoraSettings>(builder.Configuration.GetSection(Agora
 builder.Services.Configure<AgoraRecordingSettings>(builder.Configuration.GetSection(AgoraRecordingSettings.SectionName));
 builder.Services.Configure<AppRecordingStorageSettings>(builder.Configuration.GetSection(AppRecordingStorageSettings.SectionName));
 builder.Services.Configure<ZaloMiniAppSettings>(builder.Configuration.GetSection(ZaloMiniAppSettings.SectionName));
+builder.Services.Configure<AppReviewSettings>(builder.Configuration.GetSection(AppReviewSettings.SectionName));
 builder.Services.Configure<AgoraNotificationSettings>(builder.Configuration.GetSection(AgoraNotificationSettings.SectionName));
 builder.Services.Configure<SessionEvidenceSettings>(builder.Configuration.GetSection(SessionEvidenceSettings.SectionName));
 builder.Services.Configure<AbandonedSessionSettings>(builder.Configuration.GetSection(AbandonedSessionSettings.SectionName));
@@ -570,6 +571,7 @@ builder.Services.AddHostedService<PaymentTimeoutJob>();
 builder.Services.AddHostedService<RecorderAudioRetentionJob>();
 builder.Services.AddHostedService<RecorderReportDeliveryJob>();
 builder.Services.AddHostedService<RecorderTranscriptBatchJob>();
+builder.Services.AddHostedService<AccountDeletionPurgeJob>();
 builder.Services.AddHostedService<PaymentRequestReconciliationJob>();
 builder.Services.AddHostedService<TutorResponseTimeoutJob>();
 builder.Services.AddHostedService<AutoConfirmClassSessionJob>();
@@ -654,6 +656,11 @@ builder.Services.AddAuthentication(options =>
             {
                 var userRepository = context.HttpContext.RequestServices.GetRequiredService<MV.ApplicationLayer.RepositoryInterfaces.IUserRepository>();
                 var user = await userRepository.GetUserByIdAsync(userId);
+                if (user?.Isdeleted == true)
+                {
+                    context.Fail(MV.DomainLayer.Constants.AccountDeletion.DeletedMessage);
+                    return;
+                }
                 if (user == null || user.Status == 0)
                 {
                     context.Fail("Tài khoản đã bị khóa hoặc bị xóa.");

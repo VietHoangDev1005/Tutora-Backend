@@ -111,7 +111,7 @@ namespace MV.ApplicationLayer.Services
                 var age = AgeHelper.CalculateAge(dob.Value);
                 if (age < options.MinAgeRequired.Value)
                     throw new InvalidOperationException(
-                        $"Bạn chưa đủ {options.MinAgeRequired.Value} tuổi nên chưa thể xác minh CCCD để đặt lịch học.");
+                        $"Bạn chưa đủ {options.MinAgeRequired.Value} tuổi theo ngày sinh trên CCCD nên chưa thể xác minh.");
             }
 
             // 5. Số CCCD không được trùng với tài khoản khác.

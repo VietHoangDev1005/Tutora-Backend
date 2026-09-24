@@ -10,8 +10,11 @@ public interface IRecorderService
     Task<RecorderStudentResponse> GetStudentAsync(Guid studentId, string tutorId, CancellationToken ct = default);
     Task<RecorderStudentResponse> CreateStudentAsync(string tutorId, RecorderStudentRequest request, CancellationToken ct = default);
     Task<RecorderStudentResponse> UpdateStudentAsync(Guid studentId, string tutorId, RecorderStudentRequest request, CancellationToken ct = default);
-    /// <summary>Ẩn học sinh (không xoá lịch sử báo cáo).</summary>
-    Task ArchiveStudentAsync(Guid studentId, string tutorId, CancellationToken ct = default);
+    /// <summary>
+    /// Xoá VĨNH VIỄN học sinh: file ghi âm + bản chép lời trên kho, mọi buổi, báo cáo, lời mời và
+    /// nhật ký đồng ý (xoá theo FK cascade). Dùng cho yêu cầu xoá dữ liệu của phụ huynh / gia sư.
+    /// </summary>
+    Task DeleteStudentPermanentlyAsync(Guid studentId, string tutorId, CancellationToken ct = default);
 
     /// <summary>Buổi dạy của gia sư (cả ngoài nền tảng lẫn có booking đã ghi âm), lọc theo khoảng thời gian / học sinh.</summary>
     Task<IReadOnlyList<RecorderLessonResponse>> ListLessonsAsync(

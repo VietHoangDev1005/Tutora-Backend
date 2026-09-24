@@ -3,6 +3,7 @@ using MV.DomainLayer.Constants;
 using MV.DomainLayer.DTO.RequestModel;
 using MV.InfrastructureLayer.DBContext;
 using MV.DomainLayer.Entities;
+using MV.DomainLayer.Helpers;
 using MV.ApplicationLayer.RepositoryInterfaces;
 
 namespace MV.InfrastructureLayer.Repositories
@@ -54,9 +55,12 @@ namespace MV.InfrastructureLayer.Repositories
 
         public async Task<User?> GetUserByPhoneAsync(string phone)
         {
+            // SĐT lưu dạng +84…; vẫn khớp các cách viết cũ (0…, 84…) còn sót trước migration chuẩn hoá.
+            var variants = PhoneNumberHelper.LookupVariants(phone);
+            if (variants.Length == 0) return null;
             return await _context.Users
                 .AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Phone == phone);
+                .FirstOrDefaultAsync(u => u.Phone != null && variants.Contains(u.Phone));
         }
 
         public async Task<User?> GetUserByZaloIdAsync(string zaloUserId)
@@ -82,10 +86,11 @@ namespace MV.InfrastructureLayer.Repositories
             if (!string.IsNullOrWhiteSpace(parameters.SearchTerm))
             {
                 var term = parameters.SearchTerm.Trim().ToLower();
+                var phoneTerm = PhoneNumberHelper.SearchFragment(term);
                 query = query.Where(u =>
                     (u.Fullname != null && u.Fullname.ToLower().Contains(term)) ||
                     (u.Email    != null && u.Email.ToLower().Contains(term))    ||
-                    (u.Phone    != null && u.Phone.ToLower().Contains(term))    ||
+                    (u.Phone    != null && u.Phone.ToLower().Contains(phoneTerm)) ||
                     (u.Username != null && u.Username.ToLower().Contains(term)));
             }
 
@@ -129,10 +134,11 @@ namespace MV.InfrastructureLayer.Repositories
             if (!string.IsNullOrWhiteSpace(parameters.SearchTerm))
             {
                 var term = parameters.SearchTerm.Trim().ToLower();
+                var phoneTerm = PhoneNumberHelper.SearchFragment(term);
                 query = query.Where(u =>
                     (u.Fullname != null && u.Fullname.ToLower().Contains(term)) ||
                     (u.Email != null && u.Email.ToLower().Contains(term)) ||
-                    (u.Phone != null && u.Phone.ToLower().Contains(term)) ||
+                    (u.Phone != null && u.Phone.ToLower().Contains(phoneTerm)) ||
                     (u.Username != null && u.Username.ToLower().Contains(term)));
             }
 
@@ -205,7 +211,8 @@ namespace MV.InfrastructureLayer.Repositories
         public async Task<bool> IsPhoneUniqueAsync(string phone)
         {
             if (string.IsNullOrEmpty(phone)) return true;
-            return !await _context.Users.AnyAsync(u => u.Phone == phone);
+            var variants = PhoneNumberHelper.LookupVariants(phone);
+            return !await _context.Users.AnyAsync(u => u.Phone != null && variants.Contains(u.Phone));
         }
 
         public async Task<bool> IsIdentityNumberUniqueAsync(string identityNumber)
@@ -370,9 +377,10 @@ namespace MV.InfrastructureLayer.Repositories
 
         public async Task<bool> CheckIfUserLoginCorrectByPhoneAsync(string phone, string password)
         {
+            var variants = PhoneNumberHelper.LookupVariants(phone);
             var user = await _context.Users
                 .AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Phone == phone);
+                .FirstOrDefaultAsync(u => u.Phone != null && variants.Contains(u.Phone));
             if (user == null)
             {
                 return false; // User không tồn tại

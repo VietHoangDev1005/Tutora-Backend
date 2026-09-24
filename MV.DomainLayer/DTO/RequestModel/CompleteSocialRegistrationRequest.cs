@@ -11,6 +11,6 @@ public class CompleteSocialRegistrationRequest
     public string? Role { get; set; }
 
     [Required(ErrorMessage = "Số điện thoại là bắt buộc.")]
-    [RegularExpression(@"^\+?\d{9,15}$", ErrorMessage = "Số điện thoại phải gồm 9-15 chữ số và có thể bắt đầu bằng dấu +.")]
+    [RegularExpression(MV.DomainLayer.Helpers.PhoneNumberHelper.VietnamPhonePattern, ErrorMessage = "Số điện thoại không hợp lệ.")]
     public string Phone { get; set; } = string.Empty;
 }

@@ -10,6 +10,7 @@ using MV.DomainLayer.Constants;
 using MV.DomainLayer.DTO.RequestModel;
 using MV.DomainLayer.Entities;
 using MV.DomainLayer.Helpers;
+using System.Text.RegularExpressions;
 
 namespace MV.ApplicationLayer.BackgroundJobs;
 
@@ -38,7 +39,7 @@ public class RecorderReportDeliveryJob(IServiceProvider sp, ILogger<RecorderRepo
 
     // Giới hạn độ dài tham số template của Zalo.
     private const int ShortParamMax = 30;   // tên, môn, ngày
-    private const int TableValueMax = 90;   // giá trị dòng bảng
+    private const int TableValueMax = 200;  // content/homework/note (template 640496: loại 200 ký tự)
     private const string EmptyValue = "Không có";
 
     /// <summary>Lỗi được thử lại lượt sau: -133 ngoài giờ gửi, -124 token hỏng (job refresh
@@ -209,7 +210,7 @@ public class RecorderReportDeliveryJob(IServiceProvider sp, ILogger<RecorderRepo
                 Userid = lesson.Tutorid,
                 Title = "Chưa gửi được báo cáo cho phụ huynh",
                 Message = $"Báo cáo buổi học {who}chưa gửi được qua Zalo: {reason} "
-                          + "Bạn hãy mở báo cáo và tự chia sẻ cho phụ huynh qua Zalo nhé.",
+                          + "Bạn hãy kiểm tra lại số điện thoại phụ huynh trong hồ sơ học sinh.",
                 Type = NotificationType.RecorderReportDeliveryFailed,
                 Referenceid = lesson.Lessonid.ToString()
             });
@@ -237,10 +238,36 @@ public class RecorderReportDeliveryJob(IServiceProvider sp, ILogger<RecorderRepo
             ["tutor_name"] = Fit(tutorName, ShortParamMax),
             ["subject"] = Fit(lesson.Subject ?? student.Subject, ShortParamMax),
             ["lesson_date"] = Fit(lessonDate, ShortParamMax),
-            ["content"] = Fit(lesson.Reportcontent, TableValueMax),
-            ["homework"] = Fit(lesson.Reporthomework, TableValueMax),
-            ["note"] = Fit(lesson.Reportnotes, TableValueMax),
+            // Ưu tiên bản tóm tắt ngắn cho Zalo (≤ 200 ký tự, câu trọn ý); bản ghi cũ chưa có thì
+            // fallback về báo cáo đầy đủ đã bỏ markdown rồi cắt ngắn.
+            ["content"] = TableValue(lesson.Zalocontent, lesson.Reportcontent),
+            ["homework"] = TableValue(lesson.Zalohomework, lesson.Reporthomework),
+            ["note"] = TableValue(lesson.Zalonotes, lesson.Reportnotes),
         };
+    }
+
+    private static string TableValue(string? zaloSummary, string? fullText)
+        => zaloSummary is not null
+            ? Fit(zaloSummary, TableValueMax)
+            : Fit(StripMarkdown(fullText), TableValueMax);
+
+    private static readonly Regex ListMarker = new(@"^\s*(?:[-*+•]|\d+[.)])\s+", RegexOptions.Multiline);
+
+    /// <summary>
+    /// Bỏ ký hiệu markdown/LaTeX thường gặp trong báo cáo AI (tiêu đề #, in đậm *, gạch đầu dòng, $...$,
+    /// backtick) — tin Zalo hiển thị văn bản thuần nên các ký tự này chỉ làm rối và tốn chỗ.
+    /// </summary>
+    private static string? StripMarkdown(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        var text = ListMarker.Replace(value, string.Empty);
+        var sb = new System.Text.StringBuilder(text.Length);
+        foreach (var ch in text)
+        {
+            if (ch is '#' or '*' or '$' or '`') continue;
+            sb.Append(ch);
+        }
+        return sb.ToString();
     }
 
     /// <summary>

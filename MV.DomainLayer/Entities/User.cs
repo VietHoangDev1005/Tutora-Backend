@@ -94,8 +94,17 @@ public partial class User
     /// <summary>Tài khoản đã bị Admin xóa (soft-delete) — cột đã tồn tại trong DB từ trước nhưng chưa từng được map/ghi ở đây.</summary>
     public bool? Isdeleted { get; set; }
 
-    /// <summary>Thời điểm Admin xóa tài khoản.</summary>
+    /// <summary>Thời điểm tài khoản bị xoá mềm (Admin, hoặc người dùng tự xoá — xem <see cref="Deletionsource"/>).</summary>
     public DateTime? Deletedat { get; set; }
+
+    /// <summary>"self" = người dùng tự xoá qua app (AccountDeletion.SourceSelf). Null = luồng cũ.</summary>
+    public string? Deletionsource { get; set; }
+
+    /// <summary>Lý do người dùng nhập khi tự xoá tài khoản (tuỳ chọn).</summary>
+    public string? Deletionreason { get; set; }
+
+    /// <summary>Job AccountDeletionPurgeJob đã dọn dữ liệu cá nhân + file ghi âm của tài khoản.</summary>
+    public DateTime? Purgedat { get; set; }
 
     /// <summary>Cache số dư AI credit hiện tại — nguồn chi tiết nằm ở <see cref="AiCreditTransaction"/>.</summary>
     public int AiCreditsBalance { get; set; }
