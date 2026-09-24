@@ -134,7 +134,10 @@ public class RecorderService(IAppDbContext db, IAppRecordingStorage storage) : I
         await EnsureGeneratedAsync(tutorId, until < horizon ? until : horizon, ct);
 
         var q = db.RecorderLessons
-            .Where(l => l.Tutorid == tutorId && l.Status != SessionRecordingStatus.Discarded);
+            .Where(l => l.Tutorid == tutorId && l.Status != SessionRecordingStatus.Discarded)
+            // Học sinh đã ẩn (tính năng "ẩn" cũ, hoặc gia sư xoá tài khoản) không hiện trong danh bạ,
+            // nên các buổi đã sinh sẵn của họ cũng không được hiện trên lịch.
+            .Where(l => l.Student == null || l.Student.Archivedat == null);
         if (studentId is Guid sid) q = q.Where(l => l.Studentid == sid);
         if (from is DateTime f) { var fu = ToUtc(f); q = q.Where(l => (l.Scheduledstart ?? l.Startedat) >= fu); }
         if (to is DateTime t) { var tu = ToUtc(t); q = q.Where(l => (l.Scheduledstart ?? l.Startedat) <= tu); }

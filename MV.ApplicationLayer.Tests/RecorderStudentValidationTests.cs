@@ -208,6 +208,23 @@ public class RecorderStudentValidationTests
         Assert.Equal("An", Assert.Single(db.RecorderStudents).Fullname);
     }
 
+    [Fact]
+    public async Task ListLessons_ArchivedStudent_ScheduledLessonsAreHidden()
+    {
+        await using var db = CreateContext();
+        var service = Service(db);
+        var an = await service.CreateStudentAsync(Tutor, Request("An", Slot(3, "18:00", "19:30")));
+        await service.CreateStudentAsync(Tutor, Request("Bình", Slot(4, "18:00", "19:30")));
+        Assert.Contains(await service.ListLessonsAsync(Tutor, null, null, null), l => l.StudentId == an.StudentId);
+
+        db.RecorderStudents.Single(s => s.Studentid == an.StudentId).Archivedat = TimeZoneHelper.UtcNow;
+        await db.SaveChangesAsync();
+
+        var lessons = await service.ListLessonsAsync(Tutor, null, null, null);
+        Assert.NotEmpty(lessons);
+        Assert.DoesNotContain(lessons, l => l.StudentId == an.StudentId);
+    }
+
     private static RecorderService Service(AgoraDbContext db) => new(db, new FakeStorage());
 
     private static DateOnly Today() =>
