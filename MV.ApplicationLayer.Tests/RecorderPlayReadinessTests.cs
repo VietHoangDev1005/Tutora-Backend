@@ -148,6 +148,41 @@ public class RecorderPlayReadinessTests
         Assert.False(new AppReviewSettings().IsDemoTutor(DemoTutor));
     }
 
+    // ── Danh sách bản ghi cho admin ────────────────────────────────────────
+
+    [Fact]
+    public async Task AdminList_ShowsRecordedLessonsNewestFirst_WithAudioFlagAndSearch()
+    {
+        await using var db = CreateContext();
+        db.Users.Add(new User { Userid = Tutor, Username = Tutor, Password = "x", Email = "t@test.local",
+            Fullname = "Cô Lan", Phone = "+84901234567", Status = 1, Createdat = DateTime.UtcNow });
+        var an = AddStudent(db, Tutor, "Minh");
+        var old = AddLesson(db, Tutor, an.Studentid, SessionRecordingStatus.Sent);
+        old.Startedat = DateTime.UtcNow.AddDays(-2); old.Audiokey = "app/a/merged.m4a"; old.Endedat = old.Startedat;
+        var recent = AddLesson(db, Tutor, an.Studentid, SessionRecordingStatus.AwaitingApproval);
+        recent.Startedat = DateTime.UtcNow.AddHours(-1);
+        AddLesson(db, Tutor, an.Studentid, SessionRecordingStatus.Scheduled);   // chưa ghi → không hiện
+        AddLesson(db, Tutor, an.Studentid, SessionRecordingStatus.Discarded);   // đã huỷ → không hiện
+        db.RecorderAiFeedbacks.Add(new RecorderAiFeedback { Feedbackid = Guid.NewGuid(), Lessonid = old.Lessonid,
+            Tutorid = Tutor, Reason = RecorderAiFeedbackReason.Other, Createdat = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        var svc = AppRecording(db);
+
+        var all = await svc.ListLessonsForAdminAsync(null, false, 1, 20);
+        Assert.Equal(2, all.Total);
+        Assert.Equal([recent.Lessonid, old.Lessonid], all.Items.Select(i => i.LessonId).ToArray());
+        var first = all.Items[1];
+        Assert.True(first.AudioAvailable);
+        Assert.Equal("Cô Lan", first.TutorName);
+        Assert.Equal("Minh", first.StudentName);
+        Assert.Equal(1, first.AiFeedbackCount);
+
+        Assert.Single((await svc.ListLessonsForAdminAsync(null, true, 1, 20)).Items);
+        Assert.Equal(2, (await svc.ListLessonsForAdminAsync("0901234", false, 1, 20)).Total); // SĐT gõ dạng 0…
+        Assert.Equal(2, (await svc.ListLessonsForAdminAsync("minh", false, 1, 20)).Total);
+        Assert.Equal(0, (await svc.ListLessonsForAdminAsync("không có", false, 1, 20)).Total);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────
 
     private static AppRecordingService AppRecording(AgoraDbContext db) => new(

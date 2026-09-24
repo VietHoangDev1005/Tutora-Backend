@@ -22,6 +22,18 @@ public class AdminRecorderController(
     private string AdminUserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
     /// <summary>
+    /// GET /api/admin/recorder/lessons?search=&amp;onlyWithAudio=&amp;page=&amp;pageSize= — danh sách buổi ghi âm
+    /// từ app gia sư (mới nhất trước) cho trang "Bản ghi âm" trên CMS.
+    /// </summary>
+    [HttpGet("lessons")]
+    public async Task<IActionResult> ListLessons(
+        [FromQuery] string? search, [FromQuery] bool onlyWithAudio = false,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
+        Ok(APIResponse<AdminRecorderLessonPage>.Success(
+            await recordings.ListLessonsForAdminAsync(search, onlyWithAudio, page, pageSize, ct),
+            "Lấy danh sách bản ghi thành công."));
+
+    /// <summary>
     /// GET /api/admin/recorder/lessons/{lessonId}/audio — link presigned 10 phút tới merged.m4a.
     /// 404 nếu không có buổi; 400 nếu file đã hết hạn lưu trữ / chưa ghép xong.
     /// </summary>

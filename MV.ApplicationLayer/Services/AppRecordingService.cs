@@ -341,6 +341,75 @@ public class AppRecordingService(
         };
     }
 
+    public async Task<AdminRecorderLessonPage> ListLessonsForAdminAsync(
+        string? search, bool onlyWithAudio, int page, int pageSize, CancellationToken ct = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var q = from l in db.RecorderLessons.AsNoTracking()
+                where l.Status != SessionRecordingStatus.Discarded && l.Status != SessionRecordingStatus.Scheduled
+                join u in db.Users.AsNoTracking() on l.Tutorid equals u.Userid into tutors
+                from u in tutors.DefaultIfEmpty()
+                select new
+                {
+                    Lesson = l,
+                    TutorName = u != null ? u.Fullname : null,
+                    TutorPhone = u != null ? u.Phone : null,
+                    StudentName = l.Student != null ? l.Student.Fullname
+                        : l.ClassSession != null && l.ClassSession.Student != null ? l.ClassSession.Student.Fullname : null
+                };
+
+        if (onlyWithAudio)
+            q = q.Where(x => x.Lesson.Audiokey != null && x.Lesson.Audiodeletedat == null);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            var phoneTerm = PhoneNumberHelper.SearchFragment(term);
+            q = q.Where(x =>
+                (x.TutorName != null && x.TutorName.ToLower().Contains(term)) ||
+                (x.TutorPhone != null && x.TutorPhone.Contains(phoneTerm)) ||
+                (x.StudentName != null && x.StudentName.ToLower().Contains(term)));
+        }
+
+        var total = await q.CountAsync(ct);
+        var rows = await q
+            .OrderByDescending(x => x.Lesson.Startedat ?? x.Lesson.Createdat)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .ToListAsync(ct);
+
+        var ids = rows.Select(r => r.Lesson.Lessonid).ToList();
+        var feedback = await db.RecorderAiFeedbacks.AsNoTracking()
+            .Where(f => ids.Contains(f.Lessonid))
+            .GroupBy(f => f.Lessonid)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Key, g => g.Count, ct);
+
+        return new AdminRecorderLessonPage
+        {
+            Page = page,
+            PageSize = pageSize,
+            Total = total,
+            Items = rows.Select(r => new AdminRecorderLessonItem
+            {
+                LessonId = r.Lesson.Lessonid,
+                TutorId = r.Lesson.Tutorid,
+                TutorName = r.TutorName,
+                TutorPhone = r.TutorPhone,
+                StudentName = r.StudentName,
+                Subject = r.Lesson.Subject,
+                StartedAt = r.Lesson.Startedat,
+                DurationSec = r.Lesson.Durationsec,
+                Status = r.Lesson.Status,
+                DeliveryStatus = r.Lesson.Deliverystatus,
+                AudioAvailable = r.Lesson.Audiokey != null && r.Lesson.Audiodeletedat == null,
+                AudioExpiresAt = r.Lesson.Audiodeletedat == null ? r.Lesson.Endedat?.AddDays(RecorderRetention.AudioDays) : null,
+                AiFeedbackCount = feedback.GetValueOrDefault(r.Lesson.Lessonid)
+            }).ToList()
+        };
+    }
+
     // ── Duyệt + gửi ──────────────────────────────────────────────────────────
 
     public async Task<AppRecordingStatusResponse> ApproveAsync(

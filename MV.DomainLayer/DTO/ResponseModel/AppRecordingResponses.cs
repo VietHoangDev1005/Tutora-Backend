@@ -99,6 +99,33 @@ public class AppRecordingSessionMinutes
     public List<string> FollowUps { get; set; } = new();
 }
 
+/// <summary>Một buổi ghi âm từ app gia sư, cho trang admin "Bản ghi âm" trên CMS.</summary>
+public class AdminRecorderLessonItem
+{
+    public Guid LessonId { get; set; }
+    public string TutorId { get; set; } = string.Empty;
+    public string? TutorName { get; set; }
+    public string? TutorPhone { get; set; }
+    public string? StudentName { get; set; }
+    public string? Subject { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public int DurationSec { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? DeliveryStatus { get; set; }
+    /// <summary>Admin nghe được ngay (đã ghép file, chưa bị xoá theo hạn lưu trữ).</summary>
+    public bool AudioAvailable { get; set; }
+    public DateTime? AudioExpiresAt { get; set; }
+    public int AiFeedbackCount { get; set; }
+}
+
+public class AdminRecorderLessonPage
+{
+    public IReadOnlyList<AdminRecorderLessonItem> Items { get; set; } = [];
+    public int Total { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+}
+
 /// <summary>Link nghe lại có hạn.</summary>
 public class AppRecordingAudioUrlResponse
 {

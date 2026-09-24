@@ -41,6 +41,13 @@ public interface IAppRecordingService
     /// </summary>
     Task<AppRecordingAudioUrlResponse> GetAudioUrlForAdminAsync(Guid lessonId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Danh sách buổi ghi âm cho admin (mới nhất trước). <paramref name="search"/> khớp tên / SĐT gia sư
+    /// hoặc tên học sinh; <paramref name="onlyWithAudio"/> chỉ lấy buổi còn file nghe được.
+    /// </summary>
+    Task<AdminRecorderLessonPage> ListLessonsForAdminAsync(
+        string? search, bool onlyWithAudio, int page, int pageSize, CancellationToken ct = default);
+
     /// <summary>Gia sư duyệt báo cáo đã sửa → gửi phụ huynh.</summary>
     Task<AppRecordingStatusResponse> ApproveAsync(
         Guid recordingId, string tutorUserId, RecorderApproveRequest request, CancellationToken ct = default);
