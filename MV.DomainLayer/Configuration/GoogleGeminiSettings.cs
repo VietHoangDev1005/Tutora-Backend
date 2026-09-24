@@ -47,7 +47,7 @@ namespace MV.DomainLayer.Configuration
         public bool TranscriptUseBatch { get; set; } = false;
 
         /// <summary>Giữ file transcript trên kho bao nhiêu ngày (tính từ lúc kết thúc ghi) rồi xoá.
-        /// Luật BVDLCN không cho lưu vô thời hạn — mặc định 2 năm, đổi khi có chính sách chính thức.</summary>
-        public int TranscriptRetentionDays { get; set; } = 180;
+        /// Luật BVDLCN không cho lưu vô thời hạn — 90 ngày, bằng hạn giữ audio (DPIA §7).</summary>
+        public int TranscriptRetentionDays { get; set; } = 90;
     }
 }
