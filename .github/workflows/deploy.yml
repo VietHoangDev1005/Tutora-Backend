@@ -157,12 +157,25 @@ jobs:
               # Two independent migration runners, each scoped to its own tables:
               # payment schema (PaymentSqlMigrationRunner) and the new managed
               # permission-groups schema (ManagedMigrationRunner). Both must run.
-              docker compose run --rm --no-deps \
+              # -T + </dev/null: script này được đưa vào bash qua stdin của ssh
+              # (heredoc). Không chặn stdin thì `docker compose run` đọc nuốt luôn
+              # phần script còn lại → migrate + recreate KHÔNG chạy, container cũ
+              # vẫn "running" nên health check vẫn báo thành công.
+              docker compose run --rm -T --no-deps \
                 --entrypoint dotnet app \
-                MV.PresentationLayer.dll --migrate-only
-              docker compose run --rm migrate
+                MV.PresentationLayer.dll --migrate-only < /dev/null
+              docker compose run --rm -T migrate < /dev/null
 
-              docker compose up -d --no-deps --force-recreate app
+              docker compose up -d --no-deps --force-recreate app < /dev/null
+
+              # Container phải chạy đúng image vừa kéo về, không phải bản cũ.
+              RUNNING_IMAGE=$(docker inspect --format '{{.Image}}' tutora-app)
+              PULLED_IMAGE=$(docker image inspect --format '{{.Id}}' "$IMAGE_NAME:$IMAGE_TAG")
+              if [ "$RUNNING_IMAGE" != "$PULLED_IMAGE" ]; then
+                echo "❌ tutora-app đang chạy image $RUNNING_IMAGE, không phải $PULLED_IMAGE"
+                exit 1
+              fi
+              echo "✅ tutora-app chạy image mới $PULLED_IMAGE"
 
               sleep 15
               docker compose ps app
