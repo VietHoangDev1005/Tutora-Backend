@@ -2150,6 +2150,9 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
             entity.Property(e => e.Reportcontent).HasColumnName("report_content");
             entity.Property(e => e.Reporthomework).HasColumnName("report_homework");
             entity.Property(e => e.Reportnotes).HasColumnName("report_notes");
+            entity.Property(e => e.Zalocontent).HasMaxLength(200).HasColumnName("zalo_content");
+            entity.Property(e => e.Zalohomework).HasMaxLength(200).HasColumnName("zalo_homework");
+            entity.Property(e => e.Zalonotes).HasMaxLength(200).HasColumnName("zalo_notes");
             entity.Property(e => e.Approvedat).HasColumnType("timestamp without time zone").HasColumnName("approved_at");
             entity.Property(e => e.Deliverychannel).HasMaxLength(20).HasColumnName("delivery_channel");
             entity.Property(e => e.Deliverystatus).HasMaxLength(20).HasColumnName("delivery_status");

@@ -70,6 +70,15 @@ public class AppRecordingStatusResponse
     public string? LessonContent { get; set; }
     public string? Homework { get; set; }
     public string? TutorNotes { get; set; }
+
+    /// <summary>
+    /// Bản tóm tắt ngắn (≤ 90 ký tự, văn bản thuần) gửi phụ huynh qua tin Zalo — bản đã duyệt, chưa
+    /// duyệt thì là bản nháp AI. Null khi AI chưa xong hoặc bản nháp cũ chưa có phần này.
+    /// </summary>
+    public string? ZaloContent { get; set; }
+    public string? ZaloHomework { get; set; }
+    public string? ZaloNotes { get; set; }
+
     public string? ErrorMessage { get; set; }
 
     /// <summary>

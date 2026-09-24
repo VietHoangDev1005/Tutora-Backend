@@ -19,6 +19,21 @@ public sealed class TutorReportAiFillResult
     /// nghe audio. Nullable: bản nháp cũ (trước khi có field này) hoặc model bỏ sót thì là null.
     /// </summary>
     public TutorSessionMinutes? SessionMinutes { get; set; }
+
+    /// <summary>
+    /// Bản tóm tắt NGẮN gửi phụ huynh qua tin Zalo (ZBS template: giá trị dòng bảng tối đa 90 ký tự).
+    /// Sinh chung lượt gọi Gemini với báo cáo đầy đủ. Nullable: bản nháp cũ hoặc model bỏ sót thì là
+    /// null — job gửi Zalo sẽ fallback về bản đầy đủ bị cắt ngắn.
+    /// </summary>
+    public TutorZaloSummary? ZaloSummary { get; set; }
+}
+
+/// <summary>Tóm tắt báo cáo cho tin Zalo: mỗi field một câu hoàn chỉnh, văn bản thuần, ≤ 90 ký tự.</summary>
+public sealed class TutorZaloSummary
+{
+    public string? Content { get; set; }
+    public string? Homework { get; set; }
+    public string? Notes { get; set; }
 }
 
 /// <summary>Biên bản buổi học cho gia sư: tóm tắt ngắn, ý chính đã dạy, việc cần nhớ cho buổi sau.</summary>

@@ -319,6 +319,13 @@ public class AppRecordingService(
         lesson.Reportcontent = request.LessonContent.Trim();
         lesson.Reporthomework = string.IsNullOrWhiteSpace(request.Homework) ? null : request.Homework.Trim();
         lesson.Reportnotes = string.IsNullOrWhiteSpace(request.TutorNotes) ? null : request.TutorNotes.Trim();
+
+        // Tóm tắt ngắn cho tin Zalo: gia sư không gửi (app cũ / không sửa) thì lấy bản nháp AI.
+        var zaloDraft = ParseDraft(lesson.Airesult)?.ZaloSummary;
+        lesson.Zalocontent = ZaloValue(request.ZaloContent, zaloDraft?.Content);
+        lesson.Zalohomework = ZaloValue(request.ZaloHomework, zaloDraft?.Homework);
+        lesson.Zalonotes = ZaloValue(request.ZaloNotes, zaloDraft?.Notes);
+
         lesson.Approvedat = now;
         lesson.Updatedat = now;
 
@@ -350,6 +357,19 @@ public class AppRecordingService(
     }
 
     // ── nội bộ ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Giá trị gia sư gửi lên thắng bản nháp AI — kể cả chuỗi rỗng (gia sư chủ ý xoá, tin Zalo sẽ ghi
+    /// "Không có"). Chỉ khi app không gửi trường này (null, app cũ) mới lấy bản nháp. Cột DB là
+    /// varchar(200) nên cắt cứng cho chắc.
+    /// </summary>
+    private static string? ZaloValue(string? edited, string? draft)
+    {
+        var value = edited is not null ? edited.Trim()
+            : !string.IsNullOrWhiteSpace(draft) ? draft.Trim()
+            : null;
+        return value is { Length: > 200 } ? value[..200] : value;
+    }
 
     private void EnsureStorage()
     {
@@ -422,6 +442,9 @@ public class AppRecordingService(
             LessonContent = l.Reportcontent ?? draft?.LessonContent,
             Homework = l.Reporthomework ?? draft?.Homework,
             TutorNotes = l.Reportnotes ?? draft?.TutorNotes,
+            ZaloContent = l.Zalocontent ?? draft?.ZaloSummary?.Content,
+            ZaloHomework = l.Zalohomework ?? draft?.ZaloSummary?.Homework,
+            ZaloNotes = l.Zalonotes ?? draft?.ZaloSummary?.Notes,
             ErrorMessage = l.Aierror ?? l.Errormessage,
             DeliveryChannel = l.Deliverychannel,
             DeliveryStatus = l.Deliverystatus,

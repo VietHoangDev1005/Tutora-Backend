@@ -82,6 +82,18 @@ public class RecorderApproveRequest
 
     [StringLength(1000)]
     public string? TutorNotes { get; set; }
+
+    // ── Bản tóm tắt ngắn gửi qua tin Zalo (tham số template tối đa 200 ký tự) ──
+    // Bỏ trống thì dùng bản nháp AI (ZaloSummary).
+
+    [StringLength(200)]
+    public string? ZaloContent { get; set; }
+
+    [StringLength(200)]
+    public string? ZaloHomework { get; set; }
+
+    [StringLength(200)]
+    public string? ZaloNotes { get; set; }
 }
 
 /// <summary>
