@@ -31,12 +31,12 @@ public static class RecorderDeliveryChannel
 }
 
 /// <summary>
-/// Hạn lưu trữ file âm thanh gốc (180 ngày ≈ 6 tháng, phục vụ đối chiếu khiếu nại — chỉ admin
-/// Tutora nghe được, gia sư không). Transcript giữ theo GoogleGemini:TranscriptRetentionDays (730).
+/// Hạn lưu trữ file âm thanh gốc: 90 ngày (DPIA §7 — một chu kỳ gói 3 tháng; đối chiếu báo cáo,
+/// khiếu nại, safeguarding — chỉ admin Tutora nghe được, gia sư không). Transcript giữ theo GoogleGemini:TranscriptRetentionDays (730).
 /// </summary>
 public static class RecorderRetention
 {
-    public const int AudioDays = 180;
+    public const int AudioDays = 90;
 }
 
 /// <summary>Lý do gia sư báo nội dung AI sai (recorder.ai_feedback.reason).</summary>

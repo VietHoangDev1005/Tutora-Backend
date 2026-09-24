@@ -22,6 +22,6 @@ public class AppRecordingStorageSettings
     public string Region { get; set; } = "ap-southeast-1";
 
     /// <summary>Bucket riêng (private) cho transcript thô dạng JSON. Để trống = dùng chung Bucket,
-    /// file nằm dưới prefix lesson-transcripts/ (job xoá audio sau RecorderRetention.AudioDays = 180 ngày không đụng tới).</summary>
+    /// file nằm dưới prefix lesson-transcripts/ (job xoá audio sau RecorderRetention.AudioDays = 90 ngày không đụng tới).</summary>
     public string? TranscriptBucket { get; set; }
 }
