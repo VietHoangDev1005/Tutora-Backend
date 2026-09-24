@@ -474,7 +474,7 @@ public class AppRecordingService(
         if (student.Consentstatus == RecorderConsentStatus.TutorConfirmed
             && student.Consentversion != RecorderConsentText.CurrentVersion)
             throw new RecorderNotReadyException(
-                $"Nội dung đồng ý ghi âm đã cập nhật ({RecorderConsentText.CurrentVersion}). Cho phụ huynh đọc lại và xác nhận trong hồ sơ học sinh.");
+                "Nội dung đồng ý ghi âm đã cập nhật. Cho phụ huynh đọc lại và xác nhận trong hồ sơ học sinh.");
     }
 
     private async Task<RecorderLesson> LoadOwnedAsync(Guid lessonId, string tutorUserId, CancellationToken ct)

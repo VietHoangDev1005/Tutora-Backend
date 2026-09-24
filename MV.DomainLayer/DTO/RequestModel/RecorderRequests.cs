@@ -25,7 +25,7 @@ public class RecorderStudentRequest
     /// <summary>Gia sư xác nhận phụ huynh đã đồng ý ghi âm và nhận báo cáo.</summary>
     public bool ParentConsent { get; set; }
 
-    /// <summary>Phiên bản nội dung đồng ý phụ huynh đã đọc (app hiện gửi "v1").</summary>
+    /// <summary>Phiên bản nội dung đồng ý phụ huynh đã đọc (app hiện gửi "v2").</summary>
     [StringLength(30)]
     public string? ConsentVersion { get; set; }
 
