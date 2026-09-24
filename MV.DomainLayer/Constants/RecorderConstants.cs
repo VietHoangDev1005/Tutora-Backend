@@ -31,12 +31,12 @@ public static class RecorderDeliveryChannel
 }
 
 /// <summary>
-/// Hạn lưu trữ file âm thanh gốc (180 ngày ≈ 6 tháng, phục vụ đối chiếu khiếu nại — chỉ admin
-/// Tutora nghe được, gia sư không). Transcript giữ theo GoogleGemini:TranscriptRetentionDays (730).
+/// Hạn lưu trữ file âm thanh gốc: 90 ngày (DPIA §7 — một chu kỳ gói 3 tháng; đối chiếu báo cáo,
+/// khiếu nại, safeguarding — chỉ admin Tutora nghe được, gia sư không). Transcript giữ theo GoogleGemini:TranscriptRetentionDays (90).
 /// </summary>
 public static class RecorderRetention
 {
-    public const int AudioDays = 180;
+    public const int AudioDays = 90;
 }
 
 /// <summary>Lý do gia sư báo nội dung AI sai (recorder.ai_feedback.reason).</summary>
@@ -77,8 +77,10 @@ public static class RecorderConsentAction
 /// <summary>Nội dung đồng ý ghi âm mà gia sư đưa phụ huynh đọc trong app.</summary>
 public static class RecorderConsentText
 {
-    /// <summary>Phiên bản hiện hành — app gửi kèm khi gia sư tick xác nhận.</summary>
-    public const string CurrentVersion = "v1";
+    /// <summary>Phiên bản hiện hành — app gửi kèm khi gia sư tick xác nhận. Chỉ dùng nội bộ, không
+    /// hiện trong nội dung app. v2 (2026-09-24): thời hạn xoá bản ghi 180 → 90 ngày; học sinh
+    /// xác nhận theo v1 phải được phụ huynh đọc lại.</summary>
+    public const string CurrentVersion = "v2";
 
     /// <summary>Xác nhận từ bản app cũ (chưa hiện nội dung đồng ý) — không có phiên bản.</summary>
     public const string LegacyVersion = "v0";
