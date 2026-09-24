@@ -84,6 +84,10 @@ namespace MV.PresentationLayer.Controllers
             {
                 return BadRequest(APIResponse<object>.Fail(ex.Message, 400));
             }
+            catch (TutorUnderageException ex)
+            {
+                return BadRequest(APIResponse<object>.Fail(ex.Message, 400));
+            }
         }
 
         //[HttpPut("{id}/tutor-profile")]

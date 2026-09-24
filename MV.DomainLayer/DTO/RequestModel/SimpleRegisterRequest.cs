@@ -19,8 +19,9 @@ namespace MV.DomainLayer.DTO.RequestModel
         public string? Phone { get; set; }
 
         /// <summary>
-        /// Mật khẩu
+        /// Mật khẩu — tối thiểu 8 ký tự, cùng quy định với đặt lại / đổi mật khẩu.
         /// </summary>
+        [StringLength(100, MinimumLength = 8, ErrorMessage = "Mật khẩu phải có ít nhất 8 ký tự.")]
         public string Password { get; set; } = string.Empty;
 
         /// <summary>

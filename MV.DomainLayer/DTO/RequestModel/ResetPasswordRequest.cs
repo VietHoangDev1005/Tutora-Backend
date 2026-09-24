@@ -12,7 +12,7 @@ namespace MV.DomainLayer.DTO.RequestModel
         public string Otp { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Mật khẩu mới là bắt buộc.")]
-        [StringLength(100, MinimumLength = 6, ErrorMessage = "Mật khẩu phải có ít nhất 6 ký tự.")]
+        [StringLength(100, MinimumLength = 8, ErrorMessage = "Mật khẩu phải có ít nhất 8 ký tự.")]
         public string NewPassword { get; set; } = string.Empty;
     }
 }

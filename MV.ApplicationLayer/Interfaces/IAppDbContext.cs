@@ -42,6 +42,7 @@ public interface IAppDbContext
     DbSet<RecorderParent> RecorderParents { get; }
     DbSet<RecorderParentInvite> RecorderParentInvites { get; }
     DbSet<RecorderConsentEvent> RecorderConsentEvents { get; }
+    DbSet<RecorderAiFeedback> RecorderAiFeedbacks { get; }
     DbSet<SessionEngagementSample> SessionEngagementSamples { get; }
     DbSet<AgoraChannelEvent> AgoraChannelEvents { get; }
     DbSet<SessionParticipant> SessionParticipants { get; }

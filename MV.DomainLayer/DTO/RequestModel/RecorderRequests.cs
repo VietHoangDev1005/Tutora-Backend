@@ -19,7 +19,7 @@ public class RecorderStudentRequest
     public string? ParentName { get; set; }
 
     [StringLength(20)]
-    [RegularExpression(@"^(\+?84|0)\d{9,10}$", ErrorMessage = "Số điện thoại phụ huynh không hợp lệ")]
+    [RegularExpression(MV.DomainLayer.Helpers.PhoneNumberHelper.VietnamPhonePattern, ErrorMessage = "Số điện thoại phụ huynh không hợp lệ")]
     public string? ParentPhone { get; set; }
 
     /// <summary>Gia sư xác nhận phụ huynh đã đồng ý ghi âm và nhận báo cáo.</summary>
@@ -72,6 +72,18 @@ public class RecorderLessonCreateRequest
 
     [StringLength(100)]
     public string? Subject { get; set; }
+}
+
+/// <summary>Gia sư báo nội dung AI tạo ra bị sai / không phù hợp.</summary>
+public class RecorderAiFeedbackRequest
+{
+    /// <summary>wrong_content | wrong_student | inappropriate | other.</summary>
+    [Required(ErrorMessage = "Chọn lý do")]
+    [RegularExpression("^(wrong_content|wrong_student|inappropriate|other)$", ErrorMessage = "Lý do không hợp lệ")]
+    public string Reason { get; set; } = null!;
+
+    [StringLength(1000, ErrorMessage = "Mô tả tối đa 1000 ký tự")]
+    public string? Note { get; set; }
 }
 
 /// <summary>Gia sư duyệt báo cáo (đã sửa) để gửi phụ huynh.</summary>

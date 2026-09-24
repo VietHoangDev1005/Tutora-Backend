@@ -39,6 +39,20 @@ public static class RecorderRetention
     public const int AudioDays = 180;
 }
 
+/// <summary>Lý do gia sư báo nội dung AI sai (recorder.ai_feedback.reason).</summary>
+public static class RecorderAiFeedbackReason
+{
+    /// <summary>Nội dung không đúng với buổi học.</summary>
+    public const string WrongContent = "wrong_content";
+    /// <summary>Nhầm học sinh / thông tin của người khác.</summary>
+    public const string WrongStudent = "wrong_student";
+    /// <summary>Lời lẽ không phù hợp, xúc phạm.</summary>
+    public const string Inappropriate = "inappropriate";
+    public const string Other = "other";
+
+    public static readonly string[] All = [WrongContent, WrongStudent, Inappropriate, Other];
+}
+
 public static class RecorderDeliveryStatus
 {
     public const string Pending = "pending";

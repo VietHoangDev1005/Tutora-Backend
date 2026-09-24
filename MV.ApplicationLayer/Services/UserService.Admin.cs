@@ -203,7 +203,7 @@ namespace MV.ApplicationLayer.Services
                 string.Equals(request.Role, UserRole.Tutor, StringComparison.OrdinalIgnoreCase) ? UserRole.Tutor :
                 throw new InvalidOperationException("Vai trò không hợp lệ. Chỉ được tạo tài khoản Student, Parent hoặc Tutor.");
 
-            var phone = request.Phone.Trim();
+            var phone = PhoneNumberHelper.ToE164(request.Phone)!;
             if (!await _userRepository.IsPhoneUniqueAsync(phone))
                 throw new PhoneAlreadyExistsException();
 
@@ -274,7 +274,7 @@ namespace MV.ApplicationLayer.Services
 
             if (request.Fullname != null) user.Fullname = request.Fullname;
             if (request.Email != null) user.Email = request.Email;
-            if (request.Phone != null) user.Phone = request.Phone;
+            if (request.Phone != null) user.Phone = PhoneNumberHelper.ToE164(request.Phone);
 
 
             if (request.Address != null) user.Address = request.Address;

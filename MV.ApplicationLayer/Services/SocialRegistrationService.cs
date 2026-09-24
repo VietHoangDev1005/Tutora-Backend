@@ -9,6 +9,7 @@ using MV.ApplicationLayer.Interfaces;
 using MV.ApplicationLayer.RepositoryInterfaces;
 using MV.ApplicationLayer.ServiceInterfaces;
 using MV.DomainLayer.Constants;
+using MV.DomainLayer.Helpers;
 using MV.DomainLayer.DTO.RequestModel;
 using MV.DomainLayer.DTO.ResponseModel;
 using MV.DomainLayer.Entities;
@@ -137,8 +138,9 @@ public class SocialRegistrationService : ISocialRegistrationService
         if (session == null)
             return ExpiredSessionResponse();
 
-        var phone = request.Phone.Trim();
-        if (!PhoneRegex.IsMatch(phone))
+        // Lưu / tra cứu SĐT một dạng duy nhất +84….
+        var phone = PhoneNumberHelper.ToE164(request.Phone) ?? string.Empty;
+        if (!PhoneRegex.IsMatch(phone) || !PhoneNumberHelper.IsValidVietnamPhone(phone))
         {
             return new TokenResponse
             {

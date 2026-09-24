@@ -92,6 +92,14 @@ public class AppRecordingController(IAppRecordingService service) : ControllerBa
         StatusCode(403, APIResponse<object>.Fail(
             "Gia sư không thể nghe lại bản ghi âm. Bản ghi chỉ được Tutora dùng để tạo báo cáo và xử lý khiếu nại.", 403));
 
+    /// <summary>POST /api/recording/app/{recordingId}/ai-feedback — gia sư báo nội dung AI sai / không phù hợp.</summary>
+    [HttpPost("{recordingId:guid}/ai-feedback")]
+    public async Task<IActionResult> ReportAiFeedback(Guid recordingId, [FromBody] RecorderAiFeedbackRequest body, CancellationToken ct)
+    {
+        await service.ReportAiFeedbackAsync(recordingId, UserId, body, ct);
+        return Ok(APIResponse<object>.Success(new { }, "Cảm ơn bạn đã báo. Tutora sẽ xem lại nội dung này."));
+    }
+
     /// <summary>DELETE /api/recording/app/{recordingId} — gia sư bỏ bản ghi.</summary>
     [HttpDelete("{recordingId:guid}")]
     public async Task<IActionResult> Discard(Guid recordingId, CancellationToken ct)

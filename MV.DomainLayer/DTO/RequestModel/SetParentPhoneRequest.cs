@@ -8,6 +8,6 @@ namespace MV.DomainLayer.DTO.RequestModel;
 /// </summary>
 public class SetParentPhoneRequest
 {
-    [RegularExpression(@"^(0|\+84)(\d{9,10})$", ErrorMessage = "Số điện thoại phụ huynh không hợp lệ.")]
+    [RegularExpression(MV.DomainLayer.Helpers.PhoneNumberHelper.VietnamPhonePattern, ErrorMessage = "Số điện thoại phụ huynh không hợp lệ.")]
     public string? ParentPhone { get; set; }
 }

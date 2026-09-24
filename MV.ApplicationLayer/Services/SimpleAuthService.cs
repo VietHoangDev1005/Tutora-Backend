@@ -11,6 +11,7 @@ using MV.DomainLayer.Constants;
 using MV.DomainLayer.DTO.RequestModel;
 using MV.DomainLayer.DTO.ResponseModel;
 using MV.DomainLayer.Entities;
+using MV.DomainLayer.Helpers;
 
 namespace MV.ApplicationLayer.Services
 {
@@ -107,11 +108,12 @@ namespace MV.ApplicationLayer.Services
                         request.EmailOrPhone, request.Password);
                     wrongCredentialMessage = "Email hoặc mật khẩu không đúng.";
                 }
-                else if (request.EmailOrPhone.All(char.IsDigit) || request.EmailOrPhone.StartsWith("+"))
+                else if (PhoneNumberHelper.LooksLikePhone(request.EmailOrPhone))
                 {
-                    user = await _userRepository.GetUserByPhoneAsync(request.EmailOrPhone);
+                    var loginPhone = PhoneNumberHelper.ToE164(request.EmailOrPhone)!;
+                    user = await _userRepository.GetUserByPhoneAsync(loginPhone);
                     verifyPassword = () => _userRepository.CheckIfUserLoginCorrectByPhoneAsync(
-                        request.EmailOrPhone, request.Password);
+                        loginPhone, request.Password);
                     wrongCredentialMessage = "Số điện thoại hoặc mật khẩu không đúng.";
                 }
                 else
@@ -213,6 +215,11 @@ namespace MV.ApplicationLayer.Services
                     return new TokenResponse { ErrorMessage = "Số điện thoại là bắt buộc." };
                 }
 
+                if (!PhoneNumberHelper.IsValidVietnamPhone(request.Phone))
+                {
+                    return new TokenResponse { ErrorMessage = "Số điện thoại không hợp lệ." };
+                }
+
                 if (string.IsNullOrEmpty(request.Password))
                 {
                     return new TokenResponse { ErrorMessage = "Mật khẩu là bắt buộc." };
@@ -246,7 +253,8 @@ namespace MV.ApplicationLayer.Services
                     return new TokenResponse { ErrorMessage = "Bạn cần đồng ý Điều khoản sử dụng và Chính sách quyền riêng tư." };
                 }
 
-                var phone = request.Phone.Trim();
+                // Lưu / tra cứu SĐT một dạng duy nhất +84… (người dùng nhập 0…, 84…, +84… đều được).
+                var phone = PhoneNumberHelper.ToE164(request.Phone)!;
 
                 // Email tùy chọn — nếu có thì kiểm tra trùng.
                 if (!string.IsNullOrWhiteSpace(request.Email))
@@ -352,7 +360,7 @@ namespace MV.ApplicationLayer.Services
                         Parentid = null,
                         Fullname = request.FullName,
                         // SĐT phụ huynh (tùy chọn) — chỉ để gửi ZNS theo dõi.
-                        Parentphone = string.IsNullOrWhiteSpace(request.ParentPhone) ? null : request.ParentPhone.Trim(),
+                        Parentphone = PhoneNumberHelper.ToE164(request.ParentPhone),
                         Createdat = MV.DomainLayer.Helpers.TimeZoneHelper.UtcNow
                     });
                 }
@@ -404,7 +412,8 @@ namespace MV.ApplicationLayer.Services
                     return new TokenResponse { ErrorMessage = "Số điện thoại và OTP là bắt buộc." };
                 }
 
-                var phone = request.Phone.Trim();
+                // Lưu / tra cứu SĐT một dạng duy nhất +84… (người dùng nhập 0…, 84…, +84… đều được).
+                var phone = PhoneNumberHelper.ToE164(request.Phone)!;
                 var user = await _userRepository.GetUserByPhoneAsync(phone);
                 if (user == null)
                 {
@@ -469,7 +478,8 @@ namespace MV.ApplicationLayer.Services
                     return new TokenResponse { ErrorMessage = "Số điện thoại là bắt buộc." };
                 }
 
-                var phone = request.Phone.Trim();
+                // Lưu / tra cứu SĐT một dạng duy nhất +84… (người dùng nhập 0…, 84…, +84… đều được).
+                var phone = PhoneNumberHelper.ToE164(request.Phone)!;
                 var user = await _userRepository.GetUserByPhoneAsync(phone);
                 if (user == null)
                 {
@@ -520,7 +530,8 @@ namespace MV.ApplicationLayer.Services
                     return new TokenResponse { ErrorMessage = "Số điện thoại là bắt buộc." };
                 }
 
-                var phone = request.Phone.Trim();
+                // Lưu / tra cứu SĐT một dạng duy nhất +84… (người dùng nhập 0…, 84…, +84… đều được).
+                var phone = PhoneNumberHelper.ToE164(request.Phone)!;
                 var user = await _userRepository.GetUserByPhoneAsync(phone);
 
                 // Theo yêu cầu: báo lỗi rõ ràng khi SĐT chưa đăng ký thay vì luôn trả success.
@@ -565,7 +576,8 @@ namespace MV.ApplicationLayer.Services
                     return new TokenResponse { ErrorMessage = "Số điện thoại, OTP và mật khẩu mới là bắt buộc." };
                 }
 
-                var phone = request.Phone.Trim();
+                // Lưu / tra cứu SĐT một dạng duy nhất +84… (người dùng nhập 0…, 84…, +84… đều được).
+                var phone = PhoneNumberHelper.ToE164(request.Phone)!;
                 var user = await _userRepository.GetUserByPhoneAsync(phone);
                 if (user == null)
                 {

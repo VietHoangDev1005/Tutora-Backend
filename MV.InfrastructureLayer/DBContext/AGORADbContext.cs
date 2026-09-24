@@ -88,6 +88,8 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
 
     public virtual DbSet<RecorderConsentEvent> RecorderConsentEvents { get; set; }
 
+    public virtual DbSet<RecorderAiFeedback> RecorderAiFeedbacks { get; set; }
+
     public virtual DbSet<SessionEngagementSample> SessionEngagementSamples { get; set; }
 
     public virtual DbSet<AgoraChannelEvent> AgoraChannelEvents { get; set; }
@@ -2121,6 +2123,19 @@ public partial class AgoraDbContext : DbContext, IAppDbContext
             entity.Property(e => e.Zalouid).HasMaxLength(50).HasColumnName("zalo_uid");
             entity.Property(e => e.Ipaddress).HasMaxLength(64).HasColumnName("ip_address");
             entity.Property(e => e.Useragent).HasColumnName("user_agent");
+            entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<RecorderAiFeedback>(entity =>
+        {
+            entity.HasKey(e => e.Feedbackid).HasName("ai_feedback_pkey");
+            entity.ToTable("ai_feedback", "recorder");
+
+            entity.Property(e => e.Feedbackid).HasDefaultValueSql("gen_random_uuid()").HasColumnName("feedback_id");
+            entity.Property(e => e.Lessonid).HasColumnName("lesson_id");
+            entity.Property(e => e.Tutorid).HasMaxLength(50).HasColumnName("tutor_id");
+            entity.Property(e => e.Reason).HasMaxLength(30).HasColumnName("reason");
+            entity.Property(e => e.Note).HasMaxLength(1000).HasColumnName("note");
             entity.Property(e => e.Createdat).HasColumnType("timestamp without time zone").HasColumnName("created_at");
         });
 

@@ -194,7 +194,8 @@ namespace MV.ApplicationLayer.Services
                 throw new EmailAlreadyExistsException();
             if (!string.IsNullOrEmpty(request.Username) && !await _userRepository.IsUsernameUniqueAsync(request.Username))
                 throw new UsernameAlreadyExistsException();
-            if (!string.IsNullOrEmpty(request.Phone) && !await _userRepository.IsPhoneUniqueAsync(request.Phone))
+            var staffPhone = PhoneNumberHelper.ToE164(request.Phone);
+            if (!string.IsNullOrEmpty(staffPhone) && !await _userRepository.IsPhoneUniqueAsync(staffPhone))
                 throw new PhoneAlreadyExistsException();
 
             PermissionGroup? group = null;
@@ -215,7 +216,7 @@ namespace MV.ApplicationLayer.Services
                 Email = request.Email,
                 Password = _passwordRepository.HashPassword(request.Password),
                 Fullname = request.Fullname,
-                Phone = request.Phone,
+                Phone = staffPhone,
                 Status = 1,
                 Createdat = now,
                 Primaryrole = UserRole.Staff
@@ -294,6 +295,10 @@ namespace MV.ApplicationLayer.Services
             // Isidentityverified chỉ được set true bởi EkycService/StudentIdentityService nên không
             // cần giới hạn theo role.
             var identityLocked = user.Isidentityverified == true;
+
+            if (!identityLocked && user.Primaryrole == UserRole.Tutor
+                && !AgeHelper.IsOldEnoughToTutor(request.Birthdate))
+                throw new TutorUnderageException();
 
             if (!identityLocked)
                 user.Fullname = request.Fullname;

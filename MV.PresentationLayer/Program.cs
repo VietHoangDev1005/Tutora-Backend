@@ -58,6 +58,7 @@ builder.Services.Configure<AgoraSettings>(builder.Configuration.GetSection(Agora
 builder.Services.Configure<AgoraRecordingSettings>(builder.Configuration.GetSection(AgoraRecordingSettings.SectionName));
 builder.Services.Configure<AppRecordingStorageSettings>(builder.Configuration.GetSection(AppRecordingStorageSettings.SectionName));
 builder.Services.Configure<ZaloMiniAppSettings>(builder.Configuration.GetSection(ZaloMiniAppSettings.SectionName));
+builder.Services.Configure<AppReviewSettings>(builder.Configuration.GetSection(AppReviewSettings.SectionName));
 builder.Services.Configure<AgoraNotificationSettings>(builder.Configuration.GetSection(AgoraNotificationSettings.SectionName));
 builder.Services.Configure<SessionEvidenceSettings>(builder.Configuration.GetSection(SessionEvidenceSettings.SectionName));
 builder.Services.Configure<AbandonedSessionSettings>(builder.Configuration.GetSection(AbandonedSessionSettings.SectionName));
