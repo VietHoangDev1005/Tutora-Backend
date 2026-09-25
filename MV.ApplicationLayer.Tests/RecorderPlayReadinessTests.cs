@@ -148,10 +148,83 @@ public class RecorderPlayReadinessTests
         Assert.False(new AppReviewSettings().IsDemoTutor(DemoTutor));
     }
 
+    // ── Huỷ / ghi lại: file cũ không được mất khoá (hạn 90 ngày) ─────────────
+
+    [Fact]
+    public async Task Discard_ScheduledLesson_DeletesAudioAndTranscriptNow()
+    {
+        await using var db = CreateContext();
+        var storage = new FakeStorage();
+        var student = AddStudent(db, Tutor);
+        var lesson = AddRecordedLesson(db, student.Studentid, scheduled: true);
+        await db.SaveChangesAsync();
+
+        await AppRecording(db, storage).DiscardAsync(lesson.Lessonid, Tutor);
+
+        Assert.Equal(["app/old-audio"], storage.DeletedPrefixes);
+        Assert.Equal(["lesson-transcripts/old.json"], storage.DeletedTranscripts);
+        var saved = await db.RecorderLessons.SingleAsync(l => l.Lessonid == lesson.Lessonid);
+        Assert.Equal(SessionRecordingStatus.Scheduled, saved.Status);
+        Assert.Null(saved.Storagekey);
+        Assert.Null(saved.Transcriptkey);
+    }
+
+    [Fact]
+    public async Task Discard_AdHocLesson_KeepsFilesForRetentionJob()
+    {
+        await using var db = CreateContext();
+        var storage = new FakeStorage();
+        var student = AddStudent(db, Tutor);
+        var lesson = AddRecordedLesson(db, student.Studentid, scheduled: false);
+        await db.SaveChangesAsync();
+
+        await AppRecording(db, storage).DiscardAsync(lesson.Lessonid, Tutor);
+
+        Assert.Empty(storage.DeletedPrefixes);
+        var saved = await db.RecorderLessons.SingleAsync(l => l.Lessonid == lesson.Lessonid);
+        Assert.Equal(SessionRecordingStatus.Discarded, saved.Status);
+        Assert.Equal("app/old-audio", saved.Storagekey);
+        Assert.NotNull(saved.Endedat);
+    }
+
+    [Fact]
+    public async Task Restart_FailedLesson_DeletesOldFilesBeforeNewPrefix()
+    {
+        await using var db = CreateContext();
+        var storage = new FakeStorage();
+        var student = AddStudent(db, Tutor);
+        var lesson = AddRecordedLesson(db, student.Studentid, scheduled: true);
+        lesson.Status = SessionRecordingStatus.Failed;
+        await db.SaveChangesAsync();
+
+        await AppRecording(db, storage).StartForLessonAsync(lesson.Lessonid, Tutor, null);
+
+        Assert.Equal(["app/old-audio"], storage.DeletedPrefixes);
+        Assert.Equal(["lesson-transcripts/old.json"], storage.DeletedTranscripts);
+        var saved = await db.RecorderLessons.SingleAsync(l => l.Lessonid == lesson.Lessonid);
+        Assert.Equal(SessionRecordingStatus.Recording, saved.Status);
+        Assert.NotEqual("app/old-audio", saved.Storagekey);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────
 
-    private static AppRecordingService AppRecording(AgoraDbContext db) => new(
-        db, new FakeStorage(), null!, null!,
+    private static RecorderLesson AddRecordedLesson(AgoraDbContext db, Guid studentId, bool scheduled)
+    {
+        var l = AddLesson(db, Tutor, studentId, SessionRecordingStatus.AwaitingApproval);
+        var start = TimeZoneHelper.UtcNow.AddHours(-2);
+        l.Scheduledstart = start;
+        l.Scheduledend = scheduled ? start.AddMinutes(90) : null;
+        l.Startedat = start;
+        l.Endedat = start.AddMinutes(90);
+        l.Storagekey = "app/old-audio";
+        l.Transcriptkey = "lesson-transcripts/old.json";
+        return l;
+    }
+
+    private static AppRecordingService AppRecording(AgoraDbContext db) => AppRecording(db, new FakeStorage());
+
+    private static AppRecordingService AppRecording(AgoraDbContext db, FakeStorage storage) => new(
+        db, storage, null!, null!,
         Options.Create(new AppReviewSettings { DemoTutorUserIds = [DemoTutor] }),
         NullLogger<AppRecordingService>.Instance);
 

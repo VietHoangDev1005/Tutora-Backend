@@ -168,6 +168,9 @@ public class AppRecordingService(
                 throw new AppRecordingClosedException();
         }
 
+        // Ghi lại sau khi lỗi / huỷ: xoá file của lần ghi cũ trước khi đổi prefix.
+        await DeleteStoredFilesAsync(lesson, ct);
+
         // Ghi mới (hoặc ghi lại sau khi huỷ): prefix mới để không lẫn đoạn cũ.
         var now = TimeZoneHelper.UtcNow;
         lesson.Status = SessionRecordingStatus.Recording;
@@ -292,6 +295,8 @@ public class AppRecordingService(
         {
             // Buổi sinh từ thời khoá biểu (có giờ kết thúc): huỷ bản ghi thì trả buổi về
             // "đã lên lịch" để vẫn hiện trong lịch và ghi lại được — không xoá mất buổi học.
+            // Buổi mất Endedat nên job xoá theo hạn không tìm thấy nó nữa → xoá file ngay.
+            await DeleteStoredFilesAsync(lesson, ct);
             lesson.Status = SessionRecordingStatus.Scheduled;
             lesson.Startedat = null;
             lesson.Endedat = null;
@@ -311,8 +316,8 @@ public class AppRecordingService(
         }
         lesson.Updatedat = TimeZoneHelper.UtcNow;
         await db.SaveChangesAsync(ct);
-        // File trên kho để lifecycle rule của bucket tự dọn: xoá ngay ở đây thì
-        // một lần bấm nhầm là mất sạch.
+        // Buổi lẻ bị huỷ giữ Storagekey + Endedat: RecorderAudioRetentionJob xoá file sau
+        // RecorderRetention.AudioDays ngày (Supabase Storage không có lifecycle rule).
     }
 
     /// <summary>
@@ -443,6 +448,28 @@ public class AppRecordingService(
     {
         if (!storage.Enabled)
             throw new InvalidOperationException("Kho lưu trữ bản ghi chưa được cấu hình.");
+    }
+
+    /// <summary>
+    /// Xoá file âm thanh và bản chép lời của lần ghi trước khi buổi được dùng lại. Hai job xoá
+    /// theo hạn tìm file qua Storagekey / Transcriptkey — đổi hoặc bỏ khoá mà không xoá file
+    /// thì file nằm trên kho mãi, trái với hạn 90 ngày trong chính sách.
+    /// File trước, DB sau: xoá file lỗi thì khoá vẫn còn để thử lại.
+    /// </summary>
+    private async Task DeleteStoredFilesAsync(RecorderLesson lesson, CancellationToken ct)
+    {
+        var hasAudio = !string.IsNullOrWhiteSpace(lesson.Storagekey);
+        var hasTranscript = !string.IsNullOrWhiteSpace(lesson.Transcriptkey);
+        if (!hasAudio && !hasTranscript) return;
+        EnsureStorage();
+
+        if (hasAudio)
+            await storage.DeletePrefixAsync(lesson.Storagekey!, ct);
+        if (hasTranscript)
+            await storage.DeleteTranscriptAsync(lesson.Transcriptkey!, ct);
+        lesson.Storagekey = null;
+        lesson.Transcriptkey = null;
+        lesson.Audiokey = null;
     }
 
     private static RecorderLesson NewLesson(string tutorUserId)
