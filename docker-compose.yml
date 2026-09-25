@@ -25,7 +25,7 @@ services:
     container_name: tutora-app
     restart: unless-stopped
     ports:
-      - "5000:8080"
+      - "127.0.0.1:5000:8080"
     # File upload (avatar, tài liệu, ảnh CCCD...) do LocalFileStorageService ghi thẳng ra đĩa.
     # Deploy dùng --force-recreate nên không mount ra host là mất sạch file sau mỗi lần deploy.
     # Mount trùng đường dẫn để LocalStorage__PublicRoot/PrivateRoot trong .env giữ nguyên.
