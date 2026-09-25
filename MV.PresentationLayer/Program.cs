@@ -275,8 +275,17 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-var pgDataSourceBuilder = new NpgsqlDataSourceBuilder(
-    builder.Configuration.GetConnectionString(ConfigurationKeys.ConnectionStrings.DefaultConnection));
+// Ngân sách kết nối: Supavisor (pooler Supabase) cấp tối đa 20 cho toàn app. EF Core 8 + Hangfire 10
+// (bên dưới) = 18, chừa 2. Trước đây EF lấy Maximum Pool Size từ chuỗi kết nối (25 trên prod) nên
+// tổng có thể tới 35 > 20: lúc đông, request chờ kết nối ở pooler rồi hết giờ ("transient failure").
+// Giới hạn ở phía app thì request dư xếp hàng trong Npgsql thay vì bị pooler từ chối.
+const int EfCoreMaxPoolSize = 8;
+var efConnectionString = new NpgsqlConnectionStringBuilder(
+    builder.Configuration.GetConnectionString(ConfigurationKeys.ConnectionStrings.DefaultConnection))
+{
+    MaxPoolSize = EfCoreMaxPoolSize
+}.ConnectionString;
+var pgDataSourceBuilder = new NpgsqlDataSourceBuilder(efConnectionString);
 pgDataSourceBuilder.UseVector();
 var pgDataSource = pgDataSourceBuilder.Build();
 
@@ -523,6 +532,18 @@ builder.Services.AddHangfireServer(options =>
     options.ServerName = "background-worker";
     options.WorkerCount = 1;
     options.Queues = new[] { "default", "bulk" };
+});
+// Báo cáo AI của app ghi âm: nhiều gia sư bấm "hoàn thành" cùng lúc sau giờ dạy buổi tối. Chạy
+// song song — mỗi job chủ yếu chờ Gemini qua mạng, ffmpeg chỉ nối file (-c copy). Mặc định 2: VPS
+// 2 CPU / 3,8 GB còn ~600 MB RAM trống (2026-09-25), mỗi job đang chạy giữ thêm file + 1 tiến trình
+// ffmpeg; nâng bằng Hangfire__RecorderWorkers (không cần sửa code) sau khi đo RAM lúc nhiều job
+// chạy cùng lúc (docker stats). Job Hangfire không giữ kết nối DB suốt lúc
+// chạy (fetch bằng invisibility timeout), nên thêm worker không phá ngân sách 10 của pool Hangfire.
+builder.Services.AddHangfireServer(options =>
+{
+    options.ServerName = "recorder-worker";
+    options.WorkerCount = Math.Clamp(builder.Configuration.GetValue("Hangfire:RecorderWorkers", 2), 1, 8);
+    options.Queues = new[] { IRecorderAiService.RecorderQueue };
 });
 }
 
