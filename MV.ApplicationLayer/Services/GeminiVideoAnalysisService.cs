@@ -340,7 +340,8 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
             Required = ["lessonContent", "homework", "tutorNotes", "sessionMinutes", "zaloSummary"]
         };
 
-        var requestBody = BuildGenerateContentRequest(fileUri, mimeType, prompt, schema);
+        var requestBody = BuildGenerateContentRequest(fileUri, mimeType, prompt, schema,
+            _settings.ReportMaxOutputTokens, _settings.ReportThinkingLevel);
         var text = await SendGenerateContentAsync(requestBody, _settings.Model, ct, "TutorReportFill", fileUri);
 
         var parsed = JsonSerializer.Deserialize<TutorReportAiFillResult>(text, CamelCaseOptions);
@@ -536,9 +537,10 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
         return parsed.Summary.Trim();
     }
 
-    // Cả 3 tác vụ dùng chung builder này (tóm tắt học sinh, soát lại, auto-fill báo cáo gia sư) đều
-    // chỉ "đọc và tường thuật lại" video, không cần suy luận sâu — hạ thinking xuống mức thấp nhất để
-    // trả lời nhanh hơn mức mặc định. AskFollowUpAsync (chat hỏi tiếp) KHÔNG dùng builder này, cố tình
+    // Các tác vụ dùng chung builder này (tóm tắt học sinh, soát lại, chép lời) chỉ "đọc và tường thuật
+    // lại" video, không cần suy luận sâu — hạ thinking xuống mức thấp nhất để trả lời nhanh hơn mức mặc
+    // định. Riêng auto-fill báo cáo gia sư truyền ReportThinkingLevel ("high"): ở "minimal" model bỏ sót
+    // gần hết các bài đã làm trong buổi (thử 2026-09-25). AskFollowUpAsync (chat hỏi tiếp) KHÔNG dùng builder này, cố tình
     // giữ nguyên thinking mặc định vì trả lời câu hỏi tự do cần suy luận thật.
     //
     // Gemini 3.x đổi hẳn cách cấu hình thinking so với 2.5: không còn "thinkingBudget" (số, 0 = tắt
@@ -552,21 +554,25 @@ public class GeminiVideoAnalysisService : IGeminiVideoAnalysisService
     // còn frame hình ảnh nào để cấu hình mediaResolution/fps nữa — cắt phần lớn token so với gửi
     // nguyên video, nhanh hơn rõ rệt, đổi lại mất mọi nội dung chỉ hiện trên màn hình mà không nói ra.
     private object BuildGenerateContentRequest(
-        string fileUri, string mimeType, string prompt, GeminiSchema? jsonSchema, int? maxOutputTokens = null)
+        string fileUri, string mimeType, string prompt, GeminiSchema? jsonSchema, int? maxOutputTokens = null,
+        string? thinkingLevel = null)
     {
         var tokenLimit = maxOutputTokens ?? _settings.MaxOutputTokens;
+        var thinkingConfig = string.IsNullOrWhiteSpace(thinkingLevel)
+            ? MinimalThinkingConfig
+            : new Dictionary<string, object?> { ["thinkingLevel"] = thinkingLevel };
         var generationConfig = jsonSchema is null
             ? new Dictionary<string, object?>
             {
                 ["temperature"] = _settings.Temperature,
                 ["maxOutputTokens"] = tokenLimit,
-                ["thinkingConfig"] = MinimalThinkingConfig
+                ["thinkingConfig"] = thinkingConfig
             }
             : new Dictionary<string, object?>
             {
                 ["temperature"] = _settings.Temperature,
                 ["maxOutputTokens"] = tokenLimit,
-                ["thinkingConfig"] = MinimalThinkingConfig,
+                ["thinkingConfig"] = thinkingConfig,
                 ["responseMimeType"] = "application/json",
                 ["responseSchema"] = jsonSchema
             };

@@ -29,7 +29,18 @@ namespace MV.DomainLayer.Configuration
         /// chấp nhận buổi quá dài sẽ không có transcript đầy đủ (tóm tắt vẫn hoạt động bình thường, không phụ
         /// thuộc giới hạn này).</summary>
         public int TranscriptMaxOutputTokens { get; set; } = 65536;
-        public float Temperature { get; set; } = 0.7f;
+        /// <summary>Google khuyến nghị giữ 1.0 (mặc định) cho mọi model Gemini 3: hạ thấp hơn "may lead to
+        /// unexpected behavior, such as looping or degraded performance, particularly in complex mathematical
+        /// or reasoning tasks" (https://ai.google.dev/gemini-api/docs/gemini-3). Độ kỹ/chính xác chỉnh bằng
+        /// thinkingLevel và prompt, không bằng temperature.</summary>
+        public float Temperature { get; set; } = 1.0f;
+        /// <summary>thinkingLevel cho lượt viết báo cáo + biên bản buổi học. Thử trên cùng một file audio
+        /// (2026-09-25): "minimal" trả về 0 bài đã làm, "high" liệt kê được 6 bài — biên bản cần liệt kê đủ
+        /// nên dùng "high". Các lượt khác (chép lời, tóm tắt) vẫn "minimal".</summary>
+        public string ReportThinkingLevel { get; set; } = "high";
+        /// <summary>Token thinking được tính vào maxOutputTokens, nên lượt báo cáo ở mức "high" cần trần cao
+        /// hơn MaxOutputTokens thường (4096) để không bị cắt giữa JSON.</summary>
+        public int ReportMaxOutputTokens { get; set; } = 32768;
         /// <summary>Có chép lời (transcript) buổi ghi âm app hay không. Transcript KHÔNG hiển thị cho gia sư
         /// (họp 22/9: gia sư chỉ xem báo cáo + biên bản buổi học) — nó là "nguyên liệu thô" của hệ thống
         /// (phân tích, hỏi đáp sau này). Vì không ai chờ kết quả nên chép lời chạy nền bằng Gemini Batch
